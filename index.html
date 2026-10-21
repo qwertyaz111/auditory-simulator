@@ -3,15 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>🎧聞こえ方シミュレーター</title>
-<script type="importmap">
-{
-  "imports": {
-    "piper-plus": "https://cdn.jsdelivr.net/npm/piper-plus@0.6.0/src/index.js",
-    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.mjs"
-  }
-}
-</script>
+<title>🗣聞こえ方シミュレーター</title>
 <style>
   :root { --panel-width: 320px; --slider-color: #0075ff; }
   * { box-sizing: border-box; }
@@ -118,28 +110,13 @@
   .fallback-box { margin-top: 8px; padding: 10px 12px; border: 2px solid #d93025; border-radius: 10px; background: #fff0ee; color: #a31f14; font-size: 12.5px; font-weight: bold; line-height: 1.6; }
   .fallback-box small { display: block; margin-top: 4px; font-size: 10.5px; font-weight: normal; color: #7a3a33; word-break: break-all; }
 
-  /* クレジット表記 */
-  .credit-box { margin-top: 8px; padding: 10px 12px; border: 2px solid #333; border-radius: 10px; background: #fffbe6; text-align: center; }
-  .credit-box .credit-title { font-size: 10px; color: #777; font-weight: bold; }
-  .credit-box .credit-text { font-size: 15px; font-weight: 800; color: #333; margin-top: 2px; word-break: break-all; }
-  .credit-box .credit-sub { font-size: 10px; color: #777; margin-top: 4px; line-height: 1.5; }
-  .credit-badge {
-    position: fixed; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
-    z-index: 90; max-width: calc(100vw - 20px); padding: 8px 16px; border: 2px solid #333; border-radius: 30px;
-    background: rgba(255,255,255,0.95); color: #333; font-size: 14px; font-weight: 800; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 16px rgba(0,0,0,0.12); pointer-events: none;
-  }
-  /* パネルを開いている間は、3Dシーンの中央に合わせてずらす */
-  @media screen and (min-width: 481px) {
-    body:has(#ui-panel:not(.collapsed)) .credit-badge { left: calc(50% + (var(--panel-width) + 20px) / 2); }
-  }
 </style>
 </head>
 <body>
 
 <div id="ui-panel">
   <div class="panel-header" id="panelHeader">
-    <h1 class="app-title">🎧聞こえ方シミュレーター</h1>
+    <h1 class="app-title">🗣聞こえ方シミュレーター</h1>
     <span id="toggle-text">閉じる</span>
   </div>
 
@@ -208,26 +185,9 @@
       <textarea id="text">もしもーし。聞こえてる？</textarea>
       <div style="margin-top:8px">
         <select id="engine">
-          <option value="piper" selected>piper-plus（ブラウザ内AI音声・標準）</option>
+          <option value="fm" selected>WebAudio合成（ロボット声・標準）</option>
           <option value="speech">ブラウザ読み上げ（WebSpeechAPI）</option>
-          <option value="fm">WebAudio合成（ロボット声・オフライン向き）</option>
         </select>
-      </div>
-
-      <div id="piperBox" style="margin-top:8px">
-        <select id="ppVoice">
-          <option value="ayousanz/piper-plus-tsukuyomi-chan">つくよみちゃん</option>
-        </select>
-        <div class="input-item" style="margin-top:8px">
-          <span class="hint">話す速さ: <span id="ppRateo" style="color:#333; font-weight:bold;"></span></span>
-          <input type="range" id="ppRate" min="50" max="200" value="100">
-        </div>
-        <div class="credit-box">
-          <div class="credit-title">🎙️ クレジット表記（この声を使うとき）</div>
-          <div class="credit-text" id="creditText"></div>
-          <div class="credit-sub">動画・画面録画などでこの声を使うときは、上のクレジットを一緒に載せてください。また、個人・団体への攻撃や批判、政治・宗教上の主張、アダルト用途の文章の入力や、生成音声を素材として再配布することはご遠慮ください。つくよみちゃんコーパスの利用規約にも従ってください。<br>音声合成エンジン: piper-plus（MIT License）</div>
-        </div>
-        <p class="note">ブラウザの中でAIが音声を合成します（入力した文章は外部に送信されません）。初回のみ、音声エンジン（約19MB）とモデル（約38MB）をネットから取得するため時間がかかります。2回目以降はキャッシュを使います。うまく動かない場合は自動でWebAudio合成に切り替わります。「ブラウザ読み上げ」も選べます。</p>
       </div>
 
       <div id="speechBox" class="hide" style="margin-top:8px">
@@ -247,10 +207,15 @@
         ⚠️ ブラウザや端末によっては上手くいかないことがあります（音が出ない・元の声が重なって聞こえる・スマホ非対応など）。その場合は、上の選択肢から<b>「WebAudio合成」</b>を使ってください。共有に失敗したときは自動でWebAudio合成に切り替わります。</p>
       </div>
 
-      <div id="fmBox" class="hide" style="margin-top:8px">
+      <div id="fmBox" style="margin-top:8px">
+        <span class="hint">平均的な声の高さ</span>
+        <div class="anim-controls" style="margin-bottom:8px">
+          <button id="f0M" class="btn-anim sel">男性（約120Hz）</button>
+          <button id="f0F" class="btn-anim">女性（約220Hz）</button>
+        </div>
         <div class="input-item">
           <span class="hint">声の高さ: <span id="pitcho" style="color:#333; font-weight:bold;"></span></span>
-          <input type="range" id="pitch" min="90" max="300" value="130">
+          <input type="range" id="pitch" min="90" max="300" value="120">
         </div>
         <div class="input-item">
           <span class="hint">話す速さ: <span id="rateo" style="color:#333; font-weight:bold;"></span></span>
@@ -318,8 +283,6 @@
 </div>
 
 <div id="canvas-container"></div>
-
-<div id="creditBadge" class="credit-badge hide">🎙️ <span id="creditBadgeText"></span></div>
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
@@ -624,10 +587,6 @@ const groundLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDash
 scene.add(groundLine);
 const distSprite = makeTextSprite(384, 96, 0.9);
 scene.add(distSprite);
-/* クレジット（3D空間内・Bの頭上、名前ラベルの上） */
-const creditSprite = makeTextSprite(1024, 96, 2.0);
-creditSprite.visible = false;
-scene.add(creditSprite);
 let lastDistText = '';
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
 
@@ -663,7 +622,6 @@ function updateScene3D(c) {
   const txt = c.hd.toFixed(2) + ' m';
   if (txt !== lastDistText) { distSprite.userData.set(txt, SLIDER_COLOR); lastDistText = txt; }
   distSprite.visible = c.hd > 0.2;
-  creditSprite.position.set(P.x, heights.S / 100 + 0.5, P.z);
 }
 
 function updateAll() {
@@ -919,7 +877,6 @@ Object.keys(tabs).forEach(k => $('tab' + k).addEventListener('click', () => {
 $('engine').addEventListener('change', () => {
   const e = $('engine').value;
   hideFallback();
-  $('piperBox').classList.toggle('hide', e !== 'piper');
   $('speechBox').classList.toggle('hide', e !== 'speech');
   $('fmBox').classList.toggle('hide', e !== 'fm');
 });
@@ -1141,75 +1098,6 @@ function stopSpeech() {
   if (capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.02);
 }
 
-/* ---------- piper-plus（ブラウザ内で動くニューラルTTS / WebAssembly） ---------- */
-const PIPER_VOICES = {
-  'ayousanz/piper-plus-tsukuyomi-chan': { name: 'つくよみちゃん', credit: 'つくよみちゃんコーパス（CV.夢前黎）' },
-};
-const piperKey = () => $('ppVoice').value;
-const piperCredit = () => (PIPER_VOICES[piperKey()] || {}).credit || '';
-const PIPER_CACHE_MAX = 5;
-const piperCache = new Map();
-let piperLib = null, piperTts = null, piperTtsKey = '';
-
-function loadPiper() {
-  if (piperLib) return piperLib;
-  piperLib = (async () => {
-    const [mod, ort] = await Promise.all([import('piper-plus'), import('onnxruntime-web')]);
-    try { ort.env.wasm.numThreads = 1; } catch (_) {}   // GitHub Pagesでも動くよう、スレッドを使わない
-    return { PiperPlus: mod.PiperPlus, ort };
-  })();
-  piperLib.catch(() => { piperLib = null; });
-  return piperLib;
-}
-
-function getPiper(key) {
-  if (piperTts && piperTtsKey === key) return piperTts;
-  const old = piperTts; piperTts = null;
-  if (old) old.then(t => t.dispose()).catch(() => {});
-  piperTtsKey = key;
-  const p = (async () => {
-    status('音声エンジン（piper-plus）を読み込み中…（初回のみ・時間がかかります）');
-    const { PiperPlus, ort } = await loadPiper();
-    return await PiperPlus.initialize({
-      model: key, ort,
-      onProgress: ({ progress, message }) => status('読み込み中… ' + Math.round((progress || 0) * 100) + '% ' + (message || ''))
-    });
-  })();
-  p.catch(() => { if (piperTts === p) piperTts = null; });
-  piperTts = p;
-  return p;
-}
-
-async function speakWithPiper(text) {
-  ensureAudio();
-  const key = piperKey(), lengthScale = 100 / +$('ppRate').value;
-  const ck = key + '|' + lengthScale.toFixed(2) + '|' + text;
-  let buf = piperCache.get(ck);
-  if (!buf) {
-    const tts = await getPiper(key);
-    status('音声を合成中…');
-    const res = await tts.synthesize(text, { language: 'ja', lengthScale });
-    buf = ac.createBuffer(1, res.samples.length, res.sampleRate);
-    buf.copyToChannel(res.samples, 0);
-    piperCache.set(ck, buf);
-    if (piperCache.size > PIPER_CACHE_MAX) piperCache.delete(piperCache.keys().next().value);
-  }
-  playBuffer(buf);
-  setCredit(piperCredit());
-  status('再生中… 声: ' + piperCredit());
-}
-
-/* ---------- クレジット表記 ---------- */
-function setCredit(text) {
-  $('creditBadgeText').textContent = text;
-  $('creditBadge').classList.toggle('hide', !text);
-  creditSprite.visible = !!text;
-  if (text) creditSprite.userData.set('🎙️ ' + text, '#333');
-  updateAll();
-}
-function updateCreditBox() { $('creditText').textContent = piperCredit(); }
-$('ppVoice').addEventListener('change', updateCreditBox);
-
 /* ---------- WebAudio合成に切り替わったときの通知 ---------- */
 function hideFallback() { $('fallbackNote').classList.add('hide'); }
 function showFallback(fromName, why) {
@@ -1235,23 +1123,11 @@ $('speak').addEventListener('click', async () => {
   ensureAudio();
   try {
     let warn = '', fb = null;
-    const eng = $('engine').value;
-    if (eng === 'piper') {
-      try { await speakWithPiper(text); return; }
-      catch (e) {
-        console.error(e);
-        fb = ['piper-plus', e instanceof TypeError ? 'ネットに接続できないか、読み込みに失敗しました（' + e.message + '）' : (e.message || String(e))];
-      }
-    } else if (eng === 'speech') {
-      setCredit('');
+    if ($('engine').value === 'speech') {
       try { await speakWithSpeech(text); return; }
-      catch (e) {
-        stopSpeech();
-        fb = ['ブラウザ読み上げ', e.message || String(e)];
-      }
+      catch (e) { stopSpeech(); fb = ['ブラウザ読み上げ', e.message || String(e)]; }
     }
     {
-      setCredit('');
       let reading = text;
       try { reading = await toReading(text); }
       catch (e) { warn = '（漢字の辞書を使えなかったため、ひらがな等のみ読みます: ' + e.message + '）'; }
@@ -1289,7 +1165,6 @@ $('micBtn').addEventListener('click', async () => {
     });
     micNode = ac.createMediaStreamSource(micStream);
     micNode.connect(voiceIn);
-    setCredit('');
     btn.textContent = '🎤 マイクをオフ'; btn.classList.add('on');
     status('マイク入力中…（ヘッドホン必須）');
   } catch (e) { status('マイクを使えません: ' + e.message); }
@@ -1298,7 +1173,7 @@ $('micBtn').addEventListener('click', async () => {
 /* ---------- ファイル ---------- */
 $('file').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
-  ensureAudio(); stopAll(); setCredit('');
+  ensureAudio(); stopAll();
   const el = new Audio(URL.createObjectURL(f));
   el.loop = $('loop').checked;
   const src = ac.createMediaElementSource(el);
@@ -1318,10 +1193,16 @@ bindRange('rv', v => v + ' %');
 bindRange('dr', v => v + ' %');
 bindRange('pitch', v => v + ' Hz');
 bindRange('rate', v => (v / 100).toFixed(2) + '×');
+const F0_PRESET = { f0M: 120, f0F: 220 };   // 日本語話者の平均的な基本周波数の目安 [Hz]
+const syncF0Btns = () => Object.keys(F0_PRESET).forEach(id => $(id).classList.toggle('sel', +$('pitch').value === F0_PRESET[id]));
+Object.keys(F0_PRESET).forEach(id => $(id).addEventListener('click', () => {
+  $('pitch').value = F0_PRESET[id];
+  $('pitch').dispatchEvent(new Event('input'));
+}));
+$('pitch').addEventListener('input', syncF0Btns);
+syncF0Btns();
 bindRange('wsRate', v => (v / 100).toFixed(2) + '×');
 bindRange('wsPitch', v => (v / 100).toFixed(2));
-bindRange('ppRate', v => (v / 100).toFixed(2) + '×');
-updateCreditBox();
 setView('persp');
 updateAll();
 animate();
