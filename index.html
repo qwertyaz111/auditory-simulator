@@ -1009,6 +1009,89 @@ $('text').addEventListener('input', e => { if (!e.isComposing) stripKanji($('tex
 $('text').addEventListener('compositionend', () => stripKanji($('text')));
 stripKanji($('text'));
 
+/* ---------- WebSpeechAPI ----------
+   speechSynthesis の音は WebAudio に直接つなげないため、
+   「タブ音声の共有(getDisplayMedia)」で取り込み、ストリームを WebAudio の入口(voiceIn)へ流す。 */
+const hasSpeech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+let capStream = null, capSrc = null, capGain = null, speechActive = false, speechToken = 0;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function loadVoices() {
+  if (!hasSpeech) return;
+  const sel = $('wsVoice'), cur = sel.value;
+  const all = speechSynthesis.getVoices();
+  sel.innerHTML = '<option value="">自動（日本語の声）</option>';
+  all.forEach((v, i) => {
+    if (!/^ja/i.test(v.lang)) return;
+    const o = document.createElement('option');
+    o.value = String(i); o.textContent = v.name + (v.localService ? '' : '（オンライン）');
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+if (hasSpeech) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+
+async function ensureCapture() {
+  if (capStream && capStream.getAudioTracks().some(t => t.readyState === 'live')) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('この端末・ブラウザはタブ音声の共有に対応していません');
+  status('共有ダイアログで「このタブ」を選び、「タブの音声も共有」にチェックしてください');
+  let st;
+  try {
+    st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
+  } catch (e) { throw new Error('共有が許可されませんでした'); }
+  const at = st.getAudioTracks();
+  if (!at.length) { st.getTracks().forEach(t => t.stop()); throw new Error('タブの音声が共有されませんでした'); }
+  st.getVideoTracks().forEach(t => t.stop());   // 映像は使わない
+  capStream = new MediaStream(at);
+  at[0].addEventListener('ended', () => { capStream = null; });
+  try { capSrc && capSrc.disconnect(); } catch (_) {}
+  capSrc = ac.createMediaStreamSource(capStream);
+  capGain = ac.createGain(); capGain.gain.value = 0;   // 読み上げ中だけ開ける（ハウリング防止）
+  capSrc.connect(capGain); capGain.connect(voiceIn);
+}
+
+async function speakWithSpeech(text) {
+  if (!hasSpeech) throw new Error('このブラウザは読み上げ（WebSpeechAPI）に対応していません');
+  ensureAudio();
+  await ensureCapture();
+  stopAll();
+  const my = ++speechToken;
+  speechActive = true;
+  capGain.gain.setTargetAtTime(1, ac.currentTime, 0.01);
+  const run = () => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP';
+    const idx = $('wsVoice').value;
+    const v = idx !== '' ? speechSynthesis.getVoices()[+idx] : null;
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = +$('wsRate').value / 100;
+    u.pitch = +$('wsPitch').value / 100;
+    u.onend = () => {
+      if (my !== speechToken) return;
+      if ($('loop').checked) run(); else { endSpeech(); status('再生完了'); }
+    };
+    u.onerror = e => {
+      if (my !== speechToken || e.error === 'canceled' || e.error === 'interrupted') return;
+      endSpeech(); status('読み上げエラー: ' + e.error);
+    };
+    speechSynthesis.speak(u);
+  };
+  speechSynthesis.cancel();
+  await sleep(60);
+  run();
+  status('再生中…（ブラウザ読み上げ）\n音が出ない・重なる場合は「WebAudio合成」を使ってください');
+}
+function endSpeech() {
+  const my = speechToken;
+  speechActive = false;
+  setTimeout(() => { if (my === speechToken && capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.05); }, 500);
+}
+function stopSpeech() {
+  speechToken++; speechActive = false;
+  if (hasSpeech) speechSynthesis.cancel();
+  if (capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.02);
+}
+
 /* ---------- WebAudio合成に切り替わったときの通知 ---------- */
 function hideFallback() { $('fallbackNote').classList.add('hide'); }
 function showFallback(fromName, why) {
