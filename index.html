@@ -182,7 +182,8 @@
     </div>
 
     <div id="paneTts">
-      <textarea id="text">もしもーし。聞こえてる？</textarea>
+      <textarea id="text" placeholder="ひらがな・カタカナで入力">もしもーし。きこえてる？</textarea>
+      <p class="note" style="margin:4px 0 0">※漢字は入力できません。ひらがな・カタカナで入力してください。</p>
       <div style="margin-top:8px">
         <select id="engine">
           <option value="fm" selected>WebAudio合成（ロボット声・標準）</option>
@@ -221,7 +222,7 @@
           <span class="hint">話す速さ: <span id="rateo" style="color:#333; font-weight:bold;"></span></span>
           <input type="range" id="rate" min="50" max="200" value="100">
         </div>
-        <p class="note">ブラウザ内で合成するロボット風の声です。漢字は読み仮名辞書（初回のみ約17MBをネットから取得）で変換して読みます。辞書が取れない場合はひらがな・カタカナ・ローマ字のみ読めます。</p>
+        <p class="note">ブラウザ内で合成するロボット風の声です。ひらがな・カタカナ・ローマ字（数字も可）を読めます。漢字は入力できません。</p>
       </div>
 
       <div id="fallbackNote" class="fallback-box hide"></div>
@@ -986,117 +987,27 @@ async function formantSynth(text, f0, rate) {
   return { buf, skipped };
 }
 
-/* ---------- 漢字→読み仮名（kuromoji.js をCDNから遅延読み込み） ---------- */
-let kuro = null;
-function loadKuromoji() {
-  if (kuro) return kuro;
-  kuro = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
-    s.onload = () => window.kuromoji
-      .builder({ dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/' })
-      .build((err, tk) => err ? reject(err) : resolve(tk));
-    s.onerror = () => reject(new Error('辞書ライブラリを読み込めません（ネット接続を確認してください）'));
-    document.head.appendChild(s);
-  });
-  kuro.catch(() => { kuro = null; });
-  return kuro;
-}
+/* ---------- 数字→読み（漢字は入力できないので辞書は使わない） ---------- */
 const DIGITS = ['ぜろ','いち','に','さん','よん','ご','ろく','なな','はち','きゅう'];
-async function toReading(text) {
-  text = text.normalize('NFKC').replace(/[0-9]/g, d => DIGITS[+d]);
-  if (!/[一-鿿々〆ヵヶ]/.test(text)) return text;
-  status('漢字の読み辞書を読み込み中…（初回のみ・時間がかかることがあります）');
-  const tk = await loadKuromoji();
-  return tk.tokenize(text).map(t => {
-    if (t.pos === '助詞' && t.surface_form === 'は') return 'わ';
-    if (t.pos === '助詞' && t.surface_form === 'へ') return 'え';
-    return (t.reading && t.reading !== '*') ? t.reading : t.surface_form;
-  }).join('');
+function toReading(text) {
+  return text.normalize('NFKC').replace(/[0-9]/g, d => DIGITS[+d]);
 }
 
-/* ---------- WebSpeechAPI ----------
-   speechSynthesis の音は WebAudio に直接つなげないため、
-   「タブ音声の共有(getDisplayMedia)」で取り込み、ストリームを WebAudio の入口(voiceIn)へ流す。 */
-const hasSpeech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
-let capStream = null, capSrc = null, capGain = null, speechActive = false, speechToken = 0;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-function loadVoices() {
-  if (!hasSpeech) return;
-  const sel = $('wsVoice'), cur = sel.value;
-  const all = speechSynthesis.getVoices();
-  sel.innerHTML = '<option value="">自動（日本語の声）</option>';
-  all.forEach((v, i) => {
-    if (!/^ja/i.test(v.lang)) return;
-    const o = document.createElement('option');
-    o.value = String(i); o.textContent = v.name + (v.localService ? '' : '（オンライン）');
-    sel.appendChild(o);
-  });
-  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+/* ---------- 漢字を入力させない ---------- */
+const KANJI_G = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF々〆]/g;
+function stripKanji(el) {
+  const v = el.value;
+  const out = v.replace(KANJI_G, '');
+  if (out === v) return false;
+  const pos = el.selectionStart == null ? out.length : v.slice(0, el.selectionStart).replace(KANJI_G, '').length;
+  el.value = out;
+  try { el.setSelectionRange(pos, pos); } catch (_) {}
+  status('漢字は入力できないため取り除きました。ひらがな・カタカナで入力してください');
+  return true;
 }
-if (hasSpeech) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
-
-async function ensureCapture() {
-  if (capStream && capStream.getAudioTracks().some(t => t.readyState === 'live')) return;
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('この端末・ブラウザはタブ音声の共有に対応していません');
-  status('共有ダイアログで「このタブ」を選び、「タブの音声も共有」にチェックしてください');
-  let st;
-  try {
-    st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
-  } catch (e) { throw new Error('共有が許可されませんでした'); }
-  const at = st.getAudioTracks();
-  if (!at.length) { st.getTracks().forEach(t => t.stop()); throw new Error('タブの音声が共有されませんでした'); }
-  st.getVideoTracks().forEach(t => t.stop());   // 映像は使わない
-  capStream = new MediaStream(at);
-  at[0].addEventListener('ended', () => { capStream = null; });
-  try { capSrc && capSrc.disconnect(); } catch (_) {}
-  capSrc = ac.createMediaStreamSource(capStream);
-  capGain = ac.createGain(); capGain.gain.value = 0;   // 読み上げ中だけ開ける（ハウリング防止）
-  capSrc.connect(capGain); capGain.connect(voiceIn);
-}
-
-async function speakWithSpeech(text) {
-  if (!hasSpeech) throw new Error('このブラウザは読み上げ（WebSpeechAPI）に対応していません');
-  ensureAudio();
-  await ensureCapture();
-  stopAll();
-  const my = ++speechToken;
-  speechActive = true;
-  capGain.gain.setTargetAtTime(1, ac.currentTime, 0.01);
-  const run = () => {
-    const u = new SpeechSynthesisUtterance(text);
-    u.lang = 'ja-JP';
-    const idx = $('wsVoice').value;
-    const v = idx !== '' ? speechSynthesis.getVoices()[+idx] : null;
-    if (v) { u.voice = v; u.lang = v.lang; }
-    u.rate = +$('wsRate').value / 100;
-    u.pitch = +$('wsPitch').value / 100;
-    u.onend = () => {
-      if (my !== speechToken) return;
-      if ($('loop').checked) run(); else { endSpeech(); status('再生完了'); }
-    };
-    u.onerror = e => {
-      if (my !== speechToken || e.error === 'canceled' || e.error === 'interrupted') return;
-      endSpeech(); status('読み上げエラー: ' + e.error);
-    };
-    speechSynthesis.speak(u);
-  };
-  speechSynthesis.cancel();
-  await sleep(60);
-  run();
-  status('再生中…（ブラウザ読み上げ）\n音が出ない・重なる場合は「WebAudio合成」を使ってください');
-}
-function endSpeech() {
-  const my = speechToken;
-  speechActive = false;
-  setTimeout(() => { if (my === speechToken && capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.05); }, 500);
-}
-function stopSpeech() {
-  speechToken++; speechActive = false;
-  if (hasSpeech) speechSynthesis.cancel();
-  if (capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.02);
-}
+$('text').addEventListener('input', e => { if (!e.isComposing) stripKanji($('text')); });
+$('text').addEventListener('compositionend', () => stripKanji($('text')));
+stripKanji($('text'));
 
 /* ---------- WebAudio合成に切り替わったときの通知 ---------- */
 function hideFallback() { $('fallbackNote').classList.add('hide'); }
@@ -1114,8 +1025,9 @@ function showFallback(fromName, why) {
 let speakBusy = false;
 $('speak').addEventListener('click', async () => {
   if (speakBusy) return;   // 処理中の連打は無視
+  stripKanji($('text'));
   const text = $('text').value.trim();
-  if (!text) { status('テキストを入力してください'); return; }
+  if (!text) { status('テキストを入力してください（漢字は使えません）'); return; }
   speakBusy = true;
   hideFallback();
   const speakBtn = $('speak');
@@ -1128,15 +1040,13 @@ $('speak').addEventListener('click', async () => {
       catch (e) { stopSpeech(); fb = ['ブラウザ読み上げ', e.message || String(e)]; }
     }
     {
-      let reading = text;
-      try { reading = await toReading(text); }
-      catch (e) { warn = '（漢字の辞書を使えなかったため、ひらがな等のみ読みます: ' + e.message + '）'; }
+      const reading = toReading(text);
       status('音声を合成中…');
       const { buf, skipped } = await formantSynth(reading, +$('pitch').value, +$('rate').value / 100);
       playBuffer(buf);
       const notes = [];
       if (warn) notes.push(warn);
-      if (skipped) notes.push('（漢字など ' + skipped + ' 文字は読めないのでスキップしました。ひらがなで入力してください）');
+      if (skipped) notes.push('（読めない文字が ' + skipped + ' 個あったのでスキップしました。ひらがな・カタカナで入力してください）');
       status('再生中…（WebAudio合成・ロボット声）' + (notes.length ? '\n' + notes.join('\n') : ''));
       if (fb) showFallback(fb[0], fb[1]);
     }
