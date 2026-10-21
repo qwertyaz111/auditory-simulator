@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>🎧聞こえ方シミュレーター</title>
+<title>🗣聞こえ方シミュレーター</title>
 <style>
   :root { --panel-width: 320px; --slider-color: #0075ff; }
   * { box-sizing: border-box; }
@@ -104,6 +104,8 @@
   /* スライダーの色（距離表示・点線と共通） */
   input[type=range] { accent-color: var(--slider-color); }
   .switch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .meter { height: 8px; border-radius: 4px; background: #e6e6e6; overflow: hidden; margin-top: 8px; }
+  .meter > div { height: 100%; width: 0; }
 
 
   /* 切り替え通知 */
@@ -141,18 +143,13 @@
   .pvol { margin-left: auto; display: flex; align-items: center; gap: 4px; font-size: 13px; }
   .pvol input[type=range] { width: 70px; padding: 0; border: none; background: transparent; }
 
-  /* マイクの入力レベル */
-  .meter { height: 8px; border-radius: 4px; background: #e6e6e6; overflow: hidden; margin-top: 8px; }
-  .meter > div { height: 100%; width: 0; background: linear-gradient(to right, #2ecc71, #f1c40f 70%, #e74c3c); transition: width .05s linear; }
-  .meter-label { font-size: 10px; color: #999; font-weight: bold; margin-top: 8px; }
-
 </style>
 </head>
 <body>
 
 <div id="ui-panel">
   <div class="panel-header" id="panelHeader">
-    <h1 class="app-title">🎧聞こえ方シミュレーター</h1>
+    <h1 class="app-title">🗣聞こえ方シミュレーター</h1>
     <span id="toggle-text">閉じる</span>
   </div>
 
@@ -218,7 +215,8 @@
     </div>
 
     <div id="paneTts">
-      <textarea id="text">もしもーし。聞こえてる？</textarea>
+      <textarea id="text" placeholder="ひらがな・カタカナで入力">もしもーし。きこえてる？</textarea>
+      <p class="note" style="margin:4px 0 0">※漢字は入力できません。日本語はひらがな・カタカナ、韓国語はハングルで入力してください。</p>
       <div style="margin-top:8px">
         <select id="engine">
           <option value="fm" selected>WebAudio合成（ロボット声・標準）</option>
@@ -244,6 +242,11 @@
       </div>
 
       <div id="fmBox" style="margin-top:8px">
+        <span class="hint">言語</span>
+        <div class="anim-controls" style="margin-bottom:8px">
+          <button id="langJa" class="btn-anim sel">日本語</button>
+          <button id="langKo" class="btn-anim">한국어</button>
+        </div>
         <span class="hint">平均的な声の高さ</span>
         <div class="anim-controls" style="margin-bottom:8px">
           <button id="f0M" class="btn-anim sel">男性（約120Hz）</button>
@@ -257,7 +260,7 @@
           <span class="hint">話す速さ: <span id="rateo" style="color:#333; font-weight:bold;"></span></span>
           <input type="range" id="rate" min="50" max="200" value="100">
         </div>
-        <p class="note">ブラウザ内で合成するロボット風の声です。漢字は読み仮名辞書（初回のみ約17MBをネットから取得）で変換して読みます。辞書が取れない場合はひらがな・カタカナ・ローマ字のみ読めます。</p>
+        <p class="note">ブラウザ内で合成するロボット風の声です。日本語（ひらがな・カタカナ・ローマ字・数字）と韓国語（ハングル）を読めます。漢字は入力できません。</p>
       </div>
 
       <div id="fallbackNote" class="fallback-box hide"></div>
@@ -266,10 +269,7 @@
     </div>
 
     <div id="paneMic" class="hide">
-      <button id="micBtn" class="switch-btn" style="margin-top:0">🎤 マイクをオン</button>
-      <div class="meter-label">入力レベル</div>
-      <div class="meter"><div id="micLevel"></div></div>
-      <button id="recBtn" class="switch-btn" style="margin-top:10px">● 録音する（最大30秒）</button>
+      <button id="recBtn" class="switch-btn" style="margin-top:0">🎤 録音する（最大30秒）</button>
       <div class="meter" style="height:5px;margin-top:6px"><div id="recBar" style="background:#d93025"></div></div>
       <div class="note" id="recInfo" style="margin-top:4px">録音した声は、下のプレイヤーで再生できます。</div>
       <p class="note">あなたの声が、Bの位置から聞こえるように変換されます。<b>ハウリング防止のためヘッドホン必須</b>。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。
@@ -278,7 +278,7 @@
 
     <div id="paneFile" class="hide">
       <input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.opus,.flac,.weba,.webm">
-      <p class="note">MP3・M4A・WAV・OGG・FLAC などの音声に対応しています。選んだ音声を、Bの声として再生します。バーをドラッグすると好きな位置から再生できます。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。</p>
+      <p class="note">選んだ音声を、Bの声として再生します。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。</p>
     </div>
 
     <div id="playerBox" class="player hide">
@@ -943,12 +943,6 @@ Object.entries({ '': 'あいうえお', k: 'かきくけこ', s: 'さしすせ�
 Object.assign(KANA, { 'や': ['y','a'], 'ゆ': ['y','u'], 'よ': ['y','o'], 'わ': ['w','a'], 'を': ['','o'], 'ん': ['','N'], 'ゔ': ['b','u'] });
 const SMALL_Y = { 'ゃ': 'a', 'ゅ': 'u', 'ょ': 'o' };
 const SMALL_V = { 'ぁ': 'a', 'ぃ': 'i', 'ぅ': 'u', 'ぇ': 'e', 'ぉ': 'o' };
-const FORMANTS = {
-  a: [800, 1200, 2500], i: [300, 2300, 3000], u: [350, 1300, 2300],
-  e: [500, 1900, 2500], o: [500, 900, 2500], N: [250, 1000, 2200],
-};
-const UNVOICED = { k: 1800, s: 7000, t: 4500, h: 2500, p: 900, c: 5000, f: 2500 };
-const VOICED_C = new Set(['m','n','r','y','w','b','d','g','z','j','v','l']);
 
 function toMoras(text) {
   const out = []; let skipped = 0, pendC = '';
@@ -957,12 +951,12 @@ function toMoras(text) {
     const code = ch.codePointAt(0);
     if (code >= 0x30A1 && code <= 0x30F6) ch = String.fromCodePoint(code - 0x60);   // カタカナ→ひらがな
     if (KANA[ch]) { out.push({ c: KANA[ch][0], v: KANA[ch][1] }); continue; }
-    if (SMALL_Y[ch]) { const m = last(); if (m) m.v = SMALL_Y[ch]; continue; }
+    if (SMALL_Y[ch]) { const m = last(); if (m) { m.v = SMALL_Y[ch]; m.gl = 'y'; } continue; }
     if (SMALL_V[ch]) { const m = last(); if (m) m.v = SMALL_V[ch]; continue; }
-    if (ch === 'っ' || ch === 'ッ') { out.push({ pause: 0.07 }); continue; }
+    if (ch === 'っ' || ch === 'ッ') { out.push({ pause: 0.07, gem: true }); continue; }
     if (ch === 'ー' || ch === '〜' || ch === '~') { const m = last(); if (m) out.push({ c: '', v: m.v, long: true }); continue; }
     if ('、，,'.includes(ch)) { out.push({ pause: 0.25 }); continue; }
-    if ('。．.！!？?\n'.includes(ch)) { out.push({ pause: 0.45 }); continue; }
+    if ('。．.！!？?\n'.includes(ch)) { out.push({ pause: 0.45, q: '？?'.includes(ch) }); continue; }
     if (/\s/.test(ch)) { out.push({ pause: 0.12 }); continue; }
     const lc = ch.toLowerCase();
     if (/[aiueo]/.test(lc)) { out.push({ c: pendC, v: lc }); pendC = ''; continue; }
@@ -976,9 +970,221 @@ function toMoras(text) {
   return { moras: out, skipped };
 }
 
+/* ---------- 音声合成（日本語・韓国語）---------- */
+let fmLang = 'ja';
+const FM = { a:[800,1250,2600], i:[300,2300,3000], u:[350,1350,2300], e:[500,1950,2600], o:[500,900,2500],
+  A:[620,1050,2500], W:[330,1350,2350], N:[250,1000,2200] };
+const LOC = { p:1100,b:1100,m:1100,pp:1100,ph:1100, k:1600,g:1600,kk:1600,kh:1600,N:1600, S:2100,C:2100,j:2100,ch:2100,jj:2100 };
+const CS = {
+  k:{t:'st',f:1800,q:1.2,asp:.035}, t:{t:'st',f:4500,q:1,asp:.035}, p:{t:'st',f:900,q:1,asp:.03},
+  kk:{t:'st',f:1800,q:1.2,cl:.075,asp:.012}, tt:{t:'st',f:4500,q:1,cl:.075,asp:.012}, pp:{t:'st',f:900,q:1,cl:.075,asp:.012},
+  kh:{t:'st',f:1800,q:1.2,asp:.075}, th:{t:'st',f:4500,q:1,asp:.075}, ph:{t:'st',f:900,q:1,asp:.07},
+  g:{t:'vs',f:1800,q:1.2}, d:{t:'vs',f:4000,q:1}, b:{t:'vs',f:900,q:1},
+  s:{t:'fr',f:6500,q:.9,d:.09}, ss:{t:'fr',f:6500,q:.9,d:.13}, S:{t:'fr',f:3200,q:1.1,d:.09},
+  C:{t:'af',f:3200,q:1.1,d:.07}, T:{t:'af',f:5500,q:1,d:.07}, jj:{t:'af',f:3200,q:1.1,d:.07,cl:.07}, ch:{t:'af',f:3200,q:1.1,d:.1},
+  z:{t:'vf',f:6000,q:.9}, j:{t:'va',f:3200,q:1.1}, f:{t:'fr',f:2500,q:.8,d:.08}, v:{t:'vf',f:2500,q:.8},
+  h:{t:'as'}, m:{t:'na'}, n:{t:'na'}, N:{t:'na'}, r:{t:'fl'}, l:{t:'la'}, y:{t:'gl'}, w:{t:'gl'}
+};
+CS.c = CS.q = CS.x = CS.k;
+const VL = new Set(['k','t','p','s','S','C','T','h','kk','tt','pp','kh','th','ph','ss','ch','f']);
+const TENSE = /^(kk|tt|pp|kh|th|ph|ch|jj|ss)$/;
+
+function fixC(c, v) {
+  if (c === 's' && v === 'i') return 'S';
+  if (c === 't' && v === 'i') return 'C';
+  if (c === 't' && v === 'u') return 'T';
+  if (c === 'h' && v === 'i') return 'S';
+  if (c === 'z' && v === 'i') return 'j';
+  if (c === 'd' && (v === 'i' || v === 'u')) return v === 'i' ? 'j' : 'z';
+  return c;
+}
+
+/* ---------- 韓国語：ハングル → 音 ---------- */
+const KO_INI = ['g','kk','n','d','tt','r','m','b','pp','s','ss','','j','jj','ch','kh','th','ph','h'];
+const KO_MED = [['','a'],['','e'],['y','a'],['y','e'],['','A'],['','e'],['y','A'],['y','e'],['','o'],['w','a'],['w','e'],['w','e'],['y','o'],['','u'],['w','A'],['w','e'],['w','i'],['y','u'],['','W'],['','W'],['','i']];
+// [次が子音/語末のときの終声, 母音が続くとき残る音, 母音が続くとき次へ移る音]
+const KO_FIN = [['','',''],['k','','g'],['k','','kk'],['k','k','ss'],['n','','n'],['n','n','j'],['n','n',''],['t','','d'],['l','','r'],['k','l','g'],['m','l','m'],['l','l','b'],['l','l','ss'],['l','l','th'],['p','l','ph'],['l','l',''],['m','','m'],['p','','b'],['p','p','ss'],['t','','s'],['t','','ss'],['N','N',''],['t','','j'],['t','','ch'],['k','','kh'],['t','','th'],['p','','ph'],['t','','']];
+const KO_TENSE = { g:'kk', d:'tt', b:'pp', s:'ss', j:'jj' };
+const KO_LEN = { g:['g','k'], d:['d','t'], b:['b','p'], j:['j','C'] };
+
+function toKoMoras(text) {
+  const items = []; let skipped = 0;
+  for (const ch of text) {
+    const x = ch.codePointAt(0) - 0xAC00;
+    if (x >= 0 && x < 11172) { items.push({ i: KO_INI[Math.floor(x / 588)], m: KO_MED[Math.floor((x % 588) / 28)], f: x % 28 }); continue; }
+    if ('、，,'.includes(ch)) { items.push({ pause: 0.25 }); continue; }
+    if ('。．.！!？?\n'.includes(ch)) { items.push({ pause: 0.45, q: '？?'.includes(ch) }); continue; }
+    if (/\s/.test(ch)) { items.push({ pause: 0.12 }); continue; }
+    skipped++;
+  }
+  const out = []; let voiced = false;
+  items.forEach((it, k) => {
+    if (it.pause) { out.push(it); voiced = false; return; }
+    const ns = items[k + 1] && !items[k + 1].pause ? items[k + 1] : null;
+    let ini = it.carry !== undefined ? it.carry : it.i, fin = '';
+    if (it.f) {
+      const [cons, stay, move] = KO_FIN[it.f];
+      if (ns && ns.i === '' && ns.carry === undefined) { fin = stay; ns.carry = move; }   // 連音
+      else {
+        fin = cons;
+        if (ns) {
+          const ni = ns.carry !== undefined ? ns.carry : ns.i, stop = fin === 'k' || fin === 't' || fin === 'p';
+          if (stop && (ni === 'n' || ni === 'm')) fin = { k: 'N', t: 'n', p: 'm' }[fin];   // 鼻音化
+          else if (fin === 'n' && ni === 'r') { fin = 'l'; ns.carry = 'r'; }
+          else if (fin === 'l' && ni === 'n') ns.carry = 'r';
+          else if (stop && KO_TENSE[ni]) ns.carry = KO_TENSE[ni];                          // 濃音化
+        }
+      }
+    }
+    if (KO_LEN[ini]) ini = KO_LEN[ini][voiced ? 0 : 1];   // 母音に挟まれた平音は濁る
+    const [gl, v] = it.m, u = { c: ini, v };
+    if (gl) u.gl = gl;
+    if (u.c === 's' && (v === 'i' || gl === 'y')) u.c = 'S';
+    out.push(u);
+    if (fin) { out.push({ c: fin, v: null, fin: true }); voiced = fin === 'n' || fin === 'm' || fin === 'N' || fin === 'l'; }
+    else voiced = true;
+  });
+  return { moras: out, skipped };
+}
+
+/* ---------- 前処理（子音の補正・母音の無声化・声の高さの流れ）---------- */
+function prep(units, ja) {
+  if (ja) {
+    units.forEach(u => { if (!u.pause) u.c = fixC(u.c, u.v); });
+    units.forEach((u, i) => {
+      const n = units[i + 1];
+      if (u.pause || u.long || !(u.v === 'i' || u.v === 'u') || !VL.has(u.c)) return;
+      if (!n || (n.pause && !n.gem) || (!n.pause && !n.long && VL.has(n.c))) u.dev = true;
+    });
+  }
+  const isBreak = u => u && u.pause && !u.gem;
+  let i = 0;
+  while (i < units.length) {
+    if (isBreak(units[i])) { i++; continue; }
+    let j = i; const body = [];
+    while (j < units.length && !isBreak(units[j])) { if (!units[j].pause && !units[j].fin) body.push(units[j]); j++; }
+    const q = units[j] && units[j].q, n = body.length;
+    body.forEach((u, k) => {
+      let f = k === 0 ? 0.96 : 1.10 - 0.25 * ((k - 1) / Math.max(1, n - 2));   // 文頭で上がり、だんだん下がる
+      if (q && k === n - 1) f *= 1.28;                                          // 疑問文は語尾を上げる
+      u.f = f;
+    });
+    i = j + 1;
+  }
+}
+function cd(u) {   // 子音部の長さ [秒]
+  const s = CS[u.c]; let d = 0;
+  if (s) d = { st: (s.cl || .045) + .012 + (s.asp || 0), vs: .05, fr: s.d, af: (s.cl || .035) + (s.d || 0), va: .08, vf: .07, as: .06, na: .065, la: .05, fl: .03, gl: .05 }[s.t] || 0;
+  return d + (u.gl ? .05 : 0);
+}
+
 async function formantSynth(text, f0, rate) {
-  const { moras, skipped } = toMoras(text);
-  if (!moras.length) throw new Error('読める文字（ひらがな/カタカナ/ローマ字）がありません。');
+  const ja = fmLang !== 'ko';
+  const { moras: units, skipped } = ja ? toMoras(text) : toKoMoras(text);
+  if (!units.some(u => !u.pause)) throw new Error(ja ? '読める文字（ひらがな・カタカナ・ローマ字）がありません。' : '読める文字（ハングル）がありません。');
+  prep(units, ja);
+  const sr = 44100, md = 0.14 / rate;
+  let total = 0;
+  units.forEach(u => { u.d = u.pause ? u.pause : u.fin ? 0.09 / rate : Math.max(md, cd(u) + 0.07); total += u.d; });
+  const ctx = new OfflineAudioContext(1, Math.ceil((total + 0.6) * sr), sr);
+  const out = ctx.createGain(); out.gain.value = 6; out.connect(ctx.destination);
+
+  // 声帯の音（高音がなだらかに弱くなる波形）＋ゆらぎ
+  const re = new Float32Array(41), im = new Float32Array(41);
+  for (let n = 1; n <= 40; n++) im[n] = 1 / Math.pow(n, 1.15);
+  const osc = ctx.createOscillator(); osc.setPeriodicWave(ctx.createPeriodicWave(re, im)); osc.frequency.value = f0;
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
+  const lg = ctx.createGain(); lg.gain.value = f0 * 0.006; lfo.connect(lg); lg.connect(osc.frequency);
+  const amp = ctx.createGain(); amp.gain.value = 0; osc.connect(amp);
+  // ノイズ（息・摩擦・破裂）
+  const nb = ctx.createBuffer(1, sr, sr), nd = nb.getChannelData(0);
+  for (let i = 0; i < sr; i++) nd[i] = Math.random() * 2 - 1;
+  const ns = ctx.createBufferSource(); ns.buffer = nb; ns.loop = true;
+  const hn = ctx.createGain(); hn.gain.value = 0.02; ns.connect(hn);
+  const bank = ctx.createGain(); amp.connect(bank); hn.connect(bank);
+  const fl = [1.0, 0.6, 0.35, 0.2].map((g, k) => {
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = [9, 10, 12, 14][k];
+    const gn = ctx.createGain(); gn.gain.value = g; bank.connect(f); f.connect(gn); gn.connect(out); return f;
+  });
+  const nf = ctx.createBiquadFilter(); nf.type = 'bandpass';
+  const ng = ctx.createGain(); ng.gain.value = 0; ns.connect(nf); nf.connect(ng); ng.connect(out);
+  const T = (p, v, t, tc) => p.setTargetAtTime(v, t, tc);
+  const setF = (F, t, tc) => [F[0], F[1], F[2], 3500].forEach((x, k) => T(fl[k].frequency, x, t, tc));
+  const noiseAt = (f, q, t) => { nf.frequency.setValueAtTime(f, t); nf.Q.setValueAtTime(q, t); };
+
+  let t = 0.05, lastF = 1;
+  units.forEach((u, i) => {
+    const nx = units[i + 1];
+    if (u.pause) { T(amp.gain, 0, t, .015); T(hn.gain, .02, t, .015); t += u.d; return; }
+    const f = u.f || lastF; lastF = f;
+    T(osc.frequency, f0 * f * (TENSE.test(u.c || '') ? 1.06 : 1), t, .035);
+    const s = CS[u.c];
+    if (u.fin) {   // 韓国語の終声（パッチム）
+      if (s && (s.t === 'na' || s.t === 'la')) {
+        setF(u.c === 'l' ? [420, 1000, 2400] : [250, LOC[u.c] || 1700, 2300], t, .02);
+        T(amp.gain, .5, t, .02); T(amp.gain, 0, t + u.d - .02, .015);
+      } else T(amp.gain, 0, t, .012);   // 閉じて止める（破裂させない）
+      t += u.d; return;
+    }
+    const F = FM[u.v] || FM.a, g0 = u.gl ? .05 : 0, c0 = cd(u) - g0, loc = LOC[u.c] || 1700, pre = [300, loc, F[2]];
+    if (s) switch (s.t) {
+      case 'st': {
+        const cl = s.cl || .045;
+        setF(pre, t, .01); T(amp.gain, 0, t, .004); T(hn.gain, .02, t, .004);
+        noiseAt(s.f, s.q, t + cl); T(ng.gain, .7, t + cl, .002); T(ng.gain, 0, t + cl + .012, .004);
+        setF(F, t + cl, .01); T(hn.gain, 1.0, t + cl, .004); T(hn.gain, .02, t + cl + (s.asp || 0), .01);
+        break; }
+      case 'vs':
+        setF(pre, t, .01); T(amp.gain, .25, t, .008);
+        noiseAt(s.f, s.q, t + .035); T(ng.gain, .35, t + .035, .002); T(ng.gain, 0, t + .045, .004);
+        break;
+      case 'fr': case 'vf': {
+        const vo = s.t === 'vf';
+        setF(pre, t, .01); T(amp.gain, vo ? .3 : 0, t, .006); T(hn.gain, .02, t, .006);
+        noiseAt(s.f, s.q || .9, t); T(ng.gain, vo ? .3 : .45, t, .006); T(ng.gain, 0, t + c0, .008);
+        break; }
+      case 'af': case 'va': {
+        const vo = s.t === 'va', cl = vo ? .035 : (s.cl || .035);
+        setF(pre, t, .01); T(amp.gain, vo ? .25 : 0, t, .006); T(hn.gain, .02, t, .006);
+        noiseAt(s.f, s.q, t + cl); T(ng.gain, vo ? .3 : .45, t + cl, .004); T(ng.gain, 0, t + c0, .008);
+        break; }
+      case 'as': setF(F, t, .01); T(amp.gain, 0, t, .006); T(hn.gain, 1.0, t, .008); T(hn.gain, .02, t + c0, .01); break;
+      case 'na': setF([250, loc, 2300], t, .015); T(amp.gain, .45, t, .012); break;
+      case 'la': setF([380, 1100, 2500], t, .015); T(amp.gain, .45, t, .012); break;
+      case 'fl': setF(pre, t, .01); T(amp.gain, .2, t, .005); break;
+      default: setF(u.c === 'y' ? [300, 2300, 3000] : [330, 800, 2300], t, .015); T(amp.gain, .8, t, .01);
+    }
+    let tv = t + c0;
+    if (u.gl) { setF(u.gl === 'y' ? [300, 2300, 3000] : [330, 800, 2300], tv, .012); T(amp.gain, .8, tv, .01); tv += g0; }
+    setF(F, tv, .025);
+    if (u.dev) {   // 無声化した母音（息だけで「き」「す」などを出す）
+      T(amp.gain, 0, tv, .008); T(hn.gain, 1.0, tv, .008); T(hn.gain, .02, t + u.d - .01, .01);
+    } else {
+      T(amp.gain, u.v === 'N' ? .5 : (u.v === 'i' || u.v === 'u') ? .85 : 1, tv, .012); T(hn.gain, .02, tv, .02);
+    }
+    const nxVoiced = nx && !nx.pause && !(CS[nx.c] && ['st', 'fr', 'af', 'as'].includes(CS[nx.c].t));
+    if (!(nx && nx.long)) T(amp.gain, nxVoiced ? .6 : 0, t + u.d - .03, .012);
+    t += u.d;
+  });
+  osc.start(0); lfo.start(0); ns.start(0);
+  const buf = await ctx.startRendering();
+  const d = buf.getChannelData(0);
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+  if (peak > 0) for (let i = 0; i < d.length; i++) d[i] *= 0.85 / peak;
+  return { buf, skipped };
+}
+
+/* ---------- 元の日本語の声（シンプルなフォルマント合成） ---------- */
+const FORMANTS = {
+  a: [800, 1200, 2500], i: [300, 2300, 3000], u: [350, 1300, 2300],
+  e: [500, 1900, 2500], o: [500, 900, 2500], N: [250, 1000, 2200],
+};
+const UNVOICED = { k: 1800, s: 7000, t: 4500, h: 2500, p: 900, c: 5000, f: 2500 };
+const VOICED_C = new Set(['m','n','r','y','w','b','d','g','z','j','v','l']);
+async function formantSynthOld(text, f0, rate, pre) {
+  const { moras, skipped } = pre || toMoras(text);
+  if (!moras.some(m => !m.pause)) throw new Error('読める文字（ひらがな/カタカナ/ローマ字）がありません。');
   const sr = 44100, md = 0.16 / rate;
   let total = 0;
   for (const m of moras) total += m.pause ? m.pause : md;
@@ -1040,34 +1246,46 @@ async function formantSynth(text, f0, rate) {
   return { buf, skipped };
 }
 
-/* ---------- 漢字→読み仮名（kuromoji.js をCDNから遅延読み込み） ---------- */
-let kuro = null;
-function loadKuromoji() {
-  if (kuro) return kuro;
-  kuro = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
-    s.onload = () => window.kuromoji
-      .builder({ dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/' })
-      .build((err, tk) => err ? reject(err) : resolve(tk));
-    s.onerror = () => reject(new Error('辞書ライブラリを読み込めません（ネット接続を確認してください）'));
-    document.head.appendChild(s);
-  });
-  kuro.catch(() => { kuro = null; });
-  return kuro;
+/* ---------- 韓国語を元の声（シンプル合成）で読むための変換 ---------- */
+const KO2OLD_C = { kk:'k', kh:'k', k:'k', g:'g', tt:'t', th:'t', t:'t', T:'t', d:'d', pp:'p', ph:'p', p:'p', b:'b',
+  ss:'s', s:'s', S:'s', C:'c', ch:'c', jj:'j', j:'j', h:'h', m:'m', n:'n', N:'n', r:'r', l:'r', y:'y', w:'w' };
+const KO2OLD_V = { A: 'o', W: 'u' };
+function koOldMoras(text) {
+  const { moras, skipped } = toKoMoras(text);
+  const out = [];
+  for (const u of moras) {
+    if (u.pause) { out.push({ pause: u.pause }); continue; }
+    if (u.fin) { if (u.c === 'm' || u.c === 'n' || u.c === 'N') out.push({ c: '', v: 'N' }); continue; }   // 終声は鼻音だけ「ん」で残す
+    let c = KO2OLD_C[u.c] || '';
+    if (!c && u.gl) c = u.gl;                                     // ヤ行・ワ行
+    out.push({ c, v: KO2OLD_V[u.v] || u.v });
+  }
+  return { moras: out, skipped };
 }
+
+/* ---------- 数字→読み（漢字は入力できないので辞書は使わない） ---------- */
 const DIGITS = ['ぜろ','いち','に','さん','よん','ご','ろく','なな','はち','きゅう'];
-async function toReading(text) {
-  text = text.normalize('NFKC').replace(/[0-9]/g, d => DIGITS[+d]);
-  if (!/[一-鿿々〆ヵヶ]/.test(text)) return text;
-  status('漢字の読み辞書を読み込み中…（初回のみ・時間がかかることがあります）');
-  const tk = await loadKuromoji();
-  return tk.tokenize(text).map(t => {
-    if (t.pos === '助詞' && t.surface_form === 'は') return 'わ';
-    if (t.pos === '助詞' && t.surface_form === 'へ') return 'え';
-    return (t.reading && t.reading !== '*') ? t.reading : t.surface_form;
-  }).join('');
+const KO_DIGITS = ['영','일','이','삼','사','오','육','칠','팔','구'];
+function toReading(text) {
+  const D = fmLang === 'ko' ? KO_DIGITS : DIGITS;
+  return text.normalize('NFKC').replace(/[0-9]/g, d => D[+d]);
 }
+
+/* ---------- 漢字を入力させない ---------- */
+const KANJI_G = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF々〆]/g;
+function stripKanji(el) {
+  const v = el.value;
+  const out = v.replace(KANJI_G, '');
+  if (out === v) return false;
+  const pos = el.selectionStart == null ? out.length : v.slice(0, el.selectionStart).replace(KANJI_G, '').length;
+  el.value = out;
+  try { el.setSelectionRange(pos, pos); } catch (_) {}
+  status('漢字は入力できないため取り除きました。ひらがな・カタカナで入力してください');
+  return true;
+}
+$('text').addEventListener('input', e => { if (!e.isComposing) stripKanji($('text')); });
+$('text').addEventListener('compositionend', () => stripKanji($('text')));
+stripKanji($('text'));
 
 /* ---------- WebSpeechAPI ----------
    speechSynthesis の音は WebAudio に直接つなげないため、
@@ -1168,8 +1386,9 @@ function showFallback(fromName, why) {
 let speakBusy = false;
 $('speak').addEventListener('click', async () => {
   if (speakBusy) return;   // 処理中の連打は無視
+  stripKanji($('text'));
   const text = $('text').value.trim();
-  if (!text) { status('テキストを入力してください'); return; }
+  if (!text) { status('テキストを入力してください（漢字は使えません）'); return; }
   speakBusy = true;
   hideFallback();
   const speakBtn = $('speak');
@@ -1182,15 +1401,13 @@ $('speak').addEventListener('click', async () => {
       catch (e) { stopSpeech(); fb = ['ブラウザ読み上げ', e.message || String(e)]; }
     }
     {
-      let reading = text;
-      try { reading = await toReading(text); }
-      catch (e) { warn = '（漢字の辞書を使えなかったため、ひらがな等のみ読みます: ' + e.message + '）'; }
+      const reading = toReading(text);
       status('音声を合成中…');
-      const { buf, skipped } = await formantSynth(reading, +$('pitch').value, +$('rate').value / 100);
+      const { buf, skipped } = await formantSynthOld(reading, +$('pitch').value, +$('rate').value / 100, fmLang === 'ko' ? koOldMoras(reading) : null);   // 日本語も韓国語も元の声
       playBuffer(buf);
       const notes = [];
       if (warn) notes.push(warn);
-      if (skipped) notes.push('（漢字など ' + skipped + ' 文字は読めないのでスキップしました。ひらがなで入力してください）');
+      if (skipped) notes.push('（読めない文字が ' + skipped + ' 個あったのでスキップしました。ひらがな・カタカナ（韓国語はハングル）で入力してください）');
       status('再生中…（WebAudio合成・ロボット声）' + (notes.length ? '\n' + notes.join('\n') : ''));
       if (fb) showFallback(fb[0], fb[1]);
     }
@@ -1205,16 +1422,6 @@ $('speak').addEventListener('click', async () => {
 /* ---------- マイク ---------- */
 const REC_MAX = 30;                 // 録音の最大秒数
 let rec = null;                     // 録音中の状態
-function micLoop() {
-  if (!micStream || !micAn) { $('micLevel').style.width = '0%'; return; }
-  const d = new Uint8Array(micAn.fftSize);
-  micAn.getByteTimeDomainData(d);
-  let s = 0;
-  for (let i = 0; i < d.length; i++) { const v = (d[i] - 128) / 128; s += v * v; }
-  const rms = Math.sqrt(s / d.length);
-  $('micLevel').style.width = clamp(Math.sqrt(rms) * 100 * 1.1, 0, 100) + '%';
-  micRaf = requestAnimationFrame(micLoop);
-}
 async function startMic() {
   if (micStream) return true;
   try {
@@ -1224,12 +1431,7 @@ async function startMic() {
     });
     micNode = ac.createMediaStreamSource(micStream);
     micNode.connect(voiceIn);
-    micAn = ac.createAnalyser(); micAn.fftSize = 1024;
-    micNode.connect(micAn);          // レベルメーター用（出力にはつなげない）
-    const btn = $('micBtn');
-    btn.textContent = '■ マイクをオフ'; btn.classList.add('on');
     status('マイク入力中…（ヘッドホン必須）');
-    micLoop();
     syncPlayer();
     return true;
   } catch (e) { micStream = null; status('マイクを使えません: ' + e.message); return false; }
@@ -1239,14 +1441,9 @@ function stopMic(silent) {
   if (!micStream) return;
   micStream.getTracks().forEach(t => t.stop());
   try { micNode.disconnect(); } catch(_){}
-  try { micAn.disconnect(); } catch(_){}
-  micStream = micNode = micAn = null;
-  cancelAnimationFrame(micRaf); $('micLevel').style.width = '0%';
-  const btn = $('micBtn');
-  btn.textContent = '🎤 マイクをオン'; btn.classList.remove('on');
+  micStream = micNode = null;
   if (!silent) status('マイクをオフにしました');
 }
-$('micBtn').addEventListener('click', () => { micStream ? stopMic() : startMic(); });
 
 /* ---------- 録音（最大30秒） ---------- */
 function encodeWav(chunks, n, sr) {
@@ -1265,7 +1462,7 @@ function encodeWav(chunks, n, sr) {
 }
 function recUI(on) {
   const b = $('recBtn');
-  b.textContent = on ? '■ 録音を止める' : '● 録音する（最大30秒）';
+  b.textContent = on ? '■ 録音を止める' : '🎤 録音する（最大30秒）';
   b.classList.toggle('on', on);
   if (!on) $('recBar').style.width = '0%';
 }
@@ -1455,6 +1652,15 @@ bindRange('rv', v => v + ' %');
 bindRange('dr', v => v + ' %');
 bindRange('pitch', v => v + ' Hz');
 bindRange('rate', v => (v / 100).toFixed(2) + '×');
+const LANG_DEF = { ja: 'もしもーし。きこえてる？', ko: '여보세요. 잘 들려요?' };
+function setLang(l) {
+  const old = fmLang, t = $('text'); fmLang = l;
+  $('langJa').classList.toggle('sel', l === 'ja'); $('langKo').classList.toggle('sel', l === 'ko');
+  if (old !== l && (!t.value.trim() || t.value.trim() === LANG_DEF[old])) t.value = LANG_DEF[l];
+  t.placeholder = l === 'ko' ? 'ハングルで入力' : 'ひらがな・カタカナで入力';
+}
+$('langJa').addEventListener('click', () => setLang('ja'));
+$('langKo').addEventListener('click', () => setLang('ko'));
 const F0_PRESET = { f0M: 120, f0F: 220 };   // 日本語話者の平均的な基本周波数の目安 [Hz]
 const syncF0Btns = () => Object.keys(F0_PRESET).forEach(id => $(id).classList.toggle('sel', +$('pitch').value === F0_PRESET[id]));
 Object.keys(F0_PRESET).forEach(id => $(id).addEventListener('click', () => {
