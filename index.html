@@ -111,7 +111,7 @@
   .fallback-box small { display: block; margin-top: 4px; font-size: 10.5px; font-weight: normal; color: #7a3a33; word-break: break-all; }
 
   /* ===== プレイヤー（YouTube風シークバー） ===== */
-  .player { margin-top: 10px; padding: 10px 12px 8px; background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; }
+  .player { margin: 0 0 10px; padding: 10px 12px 8px; background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; }
   .player .fname { font-size: 11px; color: #777; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 15px; }
   .seek-wrap { position: relative; height: 18px; display: flex; align-items: center; }
   .seek-wrap input[type=range].seek {
@@ -269,23 +269,27 @@
       <button id="micBtn" class="switch-btn" style="margin-top:0">🎤 マイクをオン</button>
       <div class="meter-label">入力レベル</div>
       <div class="meter"><div id="micLevel"></div></div>
+      <button id="recBtn" class="switch-btn" style="margin-top:10px">● 録音する（最大30秒）</button>
+      <div class="meter" style="height:5px;margin-top:6px"><div id="recBar" style="background:#d93025"></div></div>
+      <div class="note" id="recInfo" style="margin-top:4px">録音した声は、下のプレイヤーで再生できます。</div>
       <p class="note">あなたの声が、Bの位置から聞こえるように変換されます。<b>ハウリング防止のためヘッドホン必須</b>。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。
 </p>
     </div>
 
     <div id="paneFile" class="hide">
       <input type="file" id="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.oga,.opus,.flac,.weba,.webm">
-      <div class="player">
-        <div class="fname" id="fname">ファイルが選ばれていません</div>
-        <div class="seek-wrap"><input type="range" class="seek" id="seek" min="0" max="1000" value="0" step="1" disabled aria-label="再生位置"></div>
-        <div class="player-ctrl">
-          <button id="pPlay" class="pbtn" disabled aria-label="再生/一時停止">▶</button>
-          <button id="pStop" class="pbtn sub" disabled aria-label="停止">■</button>
-          <span class="ptime"><span id="tCur">0:00</span> / <span id="tDur">0:00</span></span>
-          <span class="pvol">🔊<input type="range" id="pVol" min="0" max="100" value="100" aria-label="音量"></span>
-        </div>
-      </div>
       <p class="note">MP3・M4A・WAV・OGG・FLAC などの音声に対応しています。選んだ音声を、Bの声として再生します。バーをドラッグすると好きな位置から再生できます。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。</p>
+    </div>
+
+    <div id="playerBox" class="player hide">
+      <div class="fname" id="fname">ファイルが選ばれていません</div>
+      <div class="seek-wrap"><input type="range" class="seek" id="seek" min="0" max="1000" value="0" step="1" disabled aria-label="再生位置"></div>
+      <div class="player-ctrl">
+        <button id="pPlay" class="pbtn" disabled aria-label="再生/一時停止">▶</button>
+        <button id="pStop" class="pbtn sub" disabled aria-label="停止">■</button>
+        <span class="ptime"><span id="tCur">0:00</span> / <span id="tDur">0:00</span></span>
+        <span class="pvol" title="再生音量">🔊<input type="range" id="pVol" min="0" max="100" value="100" aria-label="音量"></span>
+      </div>
     </div>
 
     <div class="anim-controls" style="align-items:center">
@@ -922,6 +926,7 @@ Object.keys(tabs).forEach(k => $('tab' + k).addEventListener('click', () => {
     $('tab' + j).classList.toggle('sel', j === k);
     $(tabs[j]).classList.toggle('hide', j !== k);
   });
+  onTabChange(k);
 }));
 $('engine').addEventListener('change', () => {
   const e = $('engine').value;
@@ -1198,6 +1203,8 @@ $('speak').addEventListener('click', async () => {
 });
 
 /* ---------- マイク ---------- */
+const REC_MAX = 30;                 // 録音の最大秒数
+let rec = null;                     // 録音中の状態
 function micLoop() {
   if (!micStream || !micAn) { $('micLevel').style.width = '0%'; return; }
   const d = new Uint8Array(micAn.fftSize);
@@ -1208,7 +1215,27 @@ function micLoop() {
   $('micLevel').style.width = clamp(Math.sqrt(rms) * 100 * 1.1, 0, 100) + '%';
   micRaf = requestAnimationFrame(micLoop);
 }
+async function startMic() {
+  if (micStream) return true;
+  try {
+    ensureAudio(); stopAll();
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    micNode = ac.createMediaStreamSource(micStream);
+    micNode.connect(voiceIn);
+    micAn = ac.createAnalyser(); micAn.fftSize = 1024;
+    micNode.connect(micAn);          // レベルメーター用（出力にはつなげない）
+    const btn = $('micBtn');
+    btn.textContent = '■ マイクをオフ'; btn.classList.add('on');
+    status('マイク入力中…（ヘッドホン必須）');
+    micLoop();
+    syncPlayer();
+    return true;
+  } catch (e) { micStream = null; status('マイクを使えません: ' + e.message); return false; }
+}
 function stopMic(silent) {
+  if (rec) finishRec(true);
   if (!micStream) return;
   micStream.getTracks().forEach(t => t.stop());
   try { micNode.disconnect(); } catch(_){}
@@ -1219,25 +1246,75 @@ function stopMic(silent) {
   btn.textContent = '🎤 マイクをオン'; btn.classList.remove('on');
   if (!silent) status('マイクをオフにしました');
 }
-$('micBtn').addEventListener('click', async () => {
-  const btn = $('micBtn');
-  if (micStream) { stopMic(); return; }
-  try {
-    ensureAudio(); stopAll();
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-    });
-    micNode = ac.createMediaStreamSource(micStream);
-    micNode.connect(voiceIn);
-    micAn = ac.createAnalyser(); micAn.fftSize = 1024;
-    micNode.connect(micAn);          // レベルメーター用（出力にはつなげない）
-    btn.textContent = '■ マイクをオフ'; btn.classList.add('on');
-    status('マイク入力中…（ヘッドホン必須）');
-    micLoop();
-  } catch (e) { micStream = null; status('マイクを使えません: ' + e.message); }
+$('micBtn').addEventListener('click', () => { micStream ? stopMic() : startMic(); });
+
+/* ---------- 録音（最大30秒） ---------- */
+function encodeWav(chunks, n, sr) {
+  const buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, n * 2, true);
+  let o = 44;
+  for (const c of chunks) for (let i = 0; i < c.length; i++, o += 2) {
+    const x = Math.max(-1, Math.min(1, c[i]));
+    v.setInt16(o, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Blob([buf], { type: 'audio/wav' });
+}
+function recUI(on) {
+  const b = $('recBtn');
+  b.textContent = on ? '■ 録音を止める' : '● 録音する（最大30秒）';
+  b.classList.toggle('on', on);
+  if (!on) $('recBar').style.width = '0%';
+}
+function recTick() {
+  if (!rec) return;
+  const t = rec.n / rec.sr;
+  $('recBar').style.width = (t / REC_MAX * 100) + '%';
+  $('recInfo').textContent = '● 録音中 ' + fmtTime(t) + ' / ' + fmtTime(REC_MAX);
+  requestAnimationFrame(recTick);
+}
+function startRec() {
+  if (!micStream || rec) return;
+  const sr = ac.sampleRate, max = Math.floor(REC_MAX * sr);
+  const proc = ac.createScriptProcessor(4096, 1, 1);
+  const mute = ac.createGain(); mute.gain.value = 0;      // 無音で出力につなぐ（動作させるため）
+  rec = { chunks: [], n: 0, proc, mute, sr };
+  proc.onaudioprocess = e => {
+    if (!rec) return;
+    const d = e.inputBuffer.getChannelData(0);
+    const take = Math.min(max - rec.n, d.length);
+    if (take > 0) { rec.chunks.push(new Float32Array(d.subarray(0, take))); rec.n += take; }
+    if (rec.n >= max) setTimeout(() => finishRec(false, true), 0);
+  };
+  micNode.connect(proc); proc.connect(mute); mute.connect(ac.destination);
+  recUI(true); syncPlayer(); recTick();
+  status('録音中…（最大' + REC_MAX + '秒）');
+}
+function finishRec(fromStopMic, hitMax) {
+  if (!rec) return;
+  const r = rec; rec = null;
+  r.proc.onaudioprocess = null;
+  try { micNode && micNode.disconnect(r.proc); } catch(_){}
+  try { r.proc.disconnect(); r.mute.disconnect(); } catch(_){}
+  recUI(false);
+  if (r.n < r.sr * 0.2) { $('recInfo').textContent = '録音が短すぎました。もう一度どうぞ。'; syncPlayer(); if (!fromStopMic) stopMic(true); return; }
+  if (srcs.Mic) URL.revokeObjectURL(srcs.Mic.url);
+  srcs.Mic = { url: URL.createObjectURL(encodeWav(r.chunks, r.n, r.sr)), name: '🎙 録音 ' + fmtTime(r.n / r.sr) };
+  $('recInfo').textContent = '録音できました（' + fmtTime(r.n / r.sr) + '）。▶で再生できます。';
+  if (!fromStopMic) stopMic(true);     // 録音が終わったらマイクを切る（ライブ音と再生が混ざらないように）
+  loadSource('Mic');
+  status(hitMax ? REC_MAX + '秒に達したので録音を終了しました' : '録音しました');
+}
+$('recBtn').addEventListener('click', async () => {
+  if (rec) { finishRec(); return; }
+  if (!micStream && !(await startMic())) return;
+  startRec();
 });
 
-/* ---------- ファイル（プレイヤー） ---------- */
+/* ---------- プレイヤー（音声ファイル・録音 共通） ---------- */
 const MIME_BY_EXT = { mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
   opus: 'audio/ogg', flac: 'audio/flac', weba: 'audio/webm', webm: 'audio/webm' };
 const fmtTime = s => {
@@ -1246,7 +1323,8 @@ const fmtTime = s => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
   return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(sec).padStart(2, '0');
 };
-let seeking = false;
+const srcs = { File: null, Mic: null };   // タブごとの再生元 {url, name}
+let loadedKey = null, seeking = false, fileGain = null;
 
 function ensureFileEl() {
   ensureAudio();
@@ -1254,9 +1332,10 @@ function ensureFileEl() {
   fileEl = new Audio();
   fileEl.preload = 'auto';
   fileEl.loop = $('loop').checked;
-  fileEl.volume = +$('pVol').value / 100;
   fileSrc = ac.createMediaElementSource(fileEl);   // 1つの要素を使い回す（1回しか作れないため）
-  fileSrc.connect(voiceIn);
+  fileGain = ac.createGain();                       // 音量はここで調整（<audio>のvolumeは効かない端末があるため）
+  fileGain.gain.value = Math.pow(+$('pVol').value / 100, 2);
+  fileSrc.connect(fileGain); fileGain.connect(voiceIn);
   ['play', 'pause', 'ended', 'loadedmetadata', 'durationchange', 'timeupdate', 'seeked'].forEach(ev => fileEl.addEventListener(ev, syncPlayer));
   fileEl.addEventListener('ended', () => { if (!fileEl.loop) status('再生完了'); });
   fileEl.addEventListener('error', () => {
@@ -1267,12 +1346,41 @@ function ensureFileEl() {
   });
 }
 
+function loadSource(key) {
+  ensureFileEl();
+  fileEl.pause();
+  loadedKey = key;
+  const s = srcs[key];
+  if (!s) {
+    fileUrl = null; fileName = '';
+    fileEl.removeAttribute('src'); fileEl.load();
+    $('fname').textContent = key === 'Mic' ? 'まだ録音がありません' : 'ファイルが選ばれていません';
+  } else {
+    fileUrl = s.url; fileName = s.name;
+    $('fname').textContent = s.name;
+    fileEl.src = s.url; fileEl.load();
+  }
+  syncPlayer();
+}
+function onTabChange(k) {
+  if (k === 'Tts') {
+    if (fileEl) fileEl.pause();
+    $('playerBox').classList.add('hide');
+    syncPlayer();
+    return;
+  }
+  $('playerBox').classList.remove('hide');
+  if (loadedKey !== k) loadSource(k);
+  else { if (fileEl) fileEl.pause(); syncPlayer(); }
+}
+
 function syncPlayer() {
   const has = !!(fileEl && fileUrl);
+  const lock = !!rec;                                   // 録音中は操作しない
   const dur = has && isFinite(fileEl.duration) ? fileEl.duration : 0;
   const cur = has ? fileEl.currentTime : 0;
   const playing = has && !fileEl.paused && !fileEl.ended;
-  $('pPlay').disabled = !has; $('pStop').disabled = !has; $('seek').disabled = !has || !dur;
+  $('pPlay').disabled = !has || lock; $('pStop').disabled = !has || lock; $('seek').disabled = !has || !dur || lock;
   $('pPlay').textContent = playing ? '⏸' : '▶';
   $('tCur').textContent = fmtTime(seeking ? (+$('seek').value / 1000) * dur : cur);
   $('tDur').textContent = fmtTime(dur);
@@ -1320,23 +1428,20 @@ seekEl.addEventListener('change', () => {
 });
 ['pointerup', 'pointercancel', 'blur'].forEach(ev => seekEl.addEventListener(ev, () => { seekEl.classList.remove('dragging'); }));
 
-$('pVol').addEventListener('input', e => { if (fileEl) fileEl.volume = +e.target.value / 100; });
+$('pVol').addEventListener('input', e => {
+  if (fileGain) setParam(fileGain.gain, Math.pow(+e.target.value / 100, 2), 0.02);
+});
 $('loop').addEventListener('change', e => { if (fileEl) fileEl.loop = e.target.checked; });
 
 $('file').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
   ensureFileEl(); stopAll(); stopMic(true);
-  fileEl.pause();
-  if (fileUrl) URL.revokeObjectURL(fileUrl);
+  if (srcs.File) URL.revokeObjectURL(srcs.File.url);
   // MIMEが空・不正なMP3などでも読めるよう、拡張子から種類を補う
   const ext = (f.name.split('.').pop() || '').toLowerCase();
   const type = f.type && f.type.startsWith('audio/') ? f.type : (MIME_BY_EXT[ext] || f.type || 'audio/mpeg');
-  fileUrl = URL.createObjectURL(new Blob([f], { type }));
-  fileName = f.name;
-  $('fname').textContent = '🎵 ' + f.name;
-  fileEl.src = fileUrl;
-  fileEl.load();
-  syncPlayer();
+  srcs.File = { url: URL.createObjectURL(new Blob([f], { type })), name: '🎵 ' + f.name };
+  loadSource('File');
   filePlay();   // 選んだらすぐ再生
 });
 
