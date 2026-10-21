@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>🎧聞こえ方シミュレーター</title>
+<script type="importmap">
+{
+  "imports": {
+    "piper-plus": "https://cdn.jsdelivr.net/npm/piper-plus@0.6.0/src/index.js",
+    "onnxruntime-web": "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/ort.min.mjs"
+  }
+}
+</script>
+<style>
+  :root { --panel-width: 320px; --slider-color: #0075ff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: 'Helvetica Neue', Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; background: #ffffff; overflow: hidden; color: #333; }
+  .hide { display: none !important; }
+
+  #ui-panel {
+    position: absolute; top: 10px; left: 10px; width: var(--panel-width);
+    max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px);
+    background: rgba(255,255,255,0.95); padding: 15px; padding-bottom: 40px; border-radius: 15px; z-index: 100;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1); overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y;
+    border: 1px solid rgba(255,255,255,0.3); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    transition: all 0.2s ease-out;
+  }
+  #canvas-container { width: 100vw; height: 100vh; height: 100dvh; cursor: grab; touch-action: none; }
+  #canvas-container canvas { display: block; }
+
+  @media screen and (max-width: 480px) {
+    :root { --panel-width: calc(100vw - 20px); }
+    #ui-panel { left: 10px; right: 10px; }
+  }
+  @media screen and (orientation: landscape) and (max-height: 500px) {
+    :root { --panel-width: 280px; }
+    #ui-panel { top: 5px; left: 5px; padding: 10px; max-height: calc(100vh - 10px); max-height: calc(100dvh - 10px); }
+  }
+
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; gap: 10px;
+    position: sticky; top: -15px; background: rgba(255,255,255,0.95);
+    padding: 10px 15px; margin: -15px -15px 10px -15px; z-index: 10; border-bottom: 1px solid rgba(0,0,0,0.05);
+  }
+  #toggle-text { flex: none; font-size: 12px; font-weight: bold; color: #666; background: #eee; padding: 4px 10px; border-radius: 10px; white-space: nowrap; }
+  #ui-panel.collapsed { max-height: none !important; padding: 10px 15px !important; overflow: hidden !important; width: auto; max-width: calc(100vw - 20px); }
+  #ui-panel.collapsed #ui-content { display: none; }
+  @media screen and (max-width: 480px) { #ui-panel.collapsed { right: auto; } }
+
+  .app-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 1.2rem; margin: 0; color: #333; font-weight: bold; white-space: nowrap; }
+  .app-description { font-size: 11px; color: #777; margin: 4px 0 10px; line-height: 1.6; text-align: center; }
+
+  .input-group { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; margin-bottom: 10px; border: 1px solid #eee; background: #f9f9f9; position: relative; }
+  .section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 3px; }
+  .section-header strong { font-size: 15px; color: #444; }
+  .section-header small { font-size: 11px; color: #999; }
+  .input-row { display: flex; gap: 8px; align-items: flex-end; width: 100%; }
+  .input-item { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .hint { font-size: 10px; color: #999; margin-bottom: 2px; font-weight: bold; }
+  input[type=text], input[type=number], input[type=range], select, textarea { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; background: white; color: #333; width: 100%; font-family: inherit; }
+  textarea { min-height: 70px; resize: vertical; }
+  input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+  .color-picker { width: 100%; height: 38px; border: 2px solid #999; border-radius: 4px; cursor: pointer; padding: 0; background: none; }
+
+  .section { margin: 14px 0 6px; font-size: 12px; font-weight: bold; color: #555; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: #fff; color: #333; border: 2px solid #333; border-radius: 30px; padding: 6px 13px; font-size: 12px; font-weight: bold; cursor: pointer; transition: 0.3s; -webkit-tap-highlight-color: transparent; }
+  .chip:hover { background: #333; color: #fff; }
+  .chip:active { transform: scale(0.97); }
+  .chip.sel { background: #333; color: #fff; border-color: #333; }
+  .switch-btn.on { background: #d93025; }
+  .chip.on { background: #d93025; color: #fff; border-color: #d93025; }
+  .switch-btn { width: 100%; padding: 12px; background: #333; color: white; border: none; border-radius: 25px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 14px; -webkit-tap-highlight-color: transparent; margin-top: 10px; }
+  .switch-btn:active { background: #000; transform: scale(0.98); }
+
+  .row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .row label { flex: 0 0 100px; font-size: 12px; color: #555; }
+  .row output { flex: 0 0 52px; text-align: right; font-size: 12px; color: #888; font-variant-numeric: tabular-nums; }
+
+
+  .note { font-size: 10.5px; color: #999; line-height: 1.6; margin: 6px 0 0; }
+  .status { font-size: 12px; color: #b26a00; min-height: 18px; margin-top: 8px; white-space: pre-wrap; line-height: 1.5; }
+  .check { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #555; }
+  .check input { width: auto; }
+  .usage-notes { font-size: 10px; color: #aaa; margin-top: 14px; line-height: 1.6; text-align: center; }
+
+  .group-a { background: #fff5f0; border: 1px solid #ffe0d0; }
+  .group-b { background: #f0f7ff; border: 1px solid #d0e7ff; }
+  .group-s { background: #f5f5f5; border: 1px solid #e0e0e0; }
+
+  .anim-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .input-group .anim-controls { margin-bottom: 0; }
+  .btn-anim { flex: 1 1 calc(33% - 8px); padding: 10px 4px; border-radius: 8px; border: 1px solid #ddd; background: #fff; cursor: pointer; font-size: 12px; font-weight: bold; transition: 0.2s; }
+  .btn-anim.active, .btn-anim.sel { background: #333; color: #fff; border-color: #333; }
+
+  .share-btn { width: 100%; padding: 12px; background: #000; color: white; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; transition: 0.2s; font-size: 13px; display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; margin-top: 10px; }
+  .share-btn:active { transform: scale(0.98); opacity: 0.8; }
+
+  .info-box { background: #ffffff; padding: 15px; border-radius: 12px; margin-top: 12px; margin-bottom: 10px; border: 1px solid #eee; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02); }
+  .info-row { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0 8px; padding: 6px 0; }
+  .info-row:first-child { border-bottom: 1px dashed #eee; margin-bottom: 4px; }
+  .info-label { color: #555; font-size: 12px; font-weight: bold; display: flex; align-items: center; gap: 4px; }
+  .info-value { font-weight: 800; font-size: 18px; color: #2c3e50; margin-left: auto; text-align: right; font-variant-numeric: tabular-nums; }
+  .unit { font-size: 11px; margin-left: 3px; color: #7f8c8d; font-weight: normal; }
+
+  .other-tools-link { margin-top: 20px; padding: 10px; background: #f9f9f9; border-radius: 10px; text-align: center; }
+  .other-tools-link a { text-decoration: none; color: #333; font-size: 12px; font-weight: bold; border: 2px solid #333; padding: 8px 15px; border-radius: 30px; display: inline-block; transition: 0.3s; margin: 4px; }
+  .other-tools-link a:hover { background: #333; color: #fff; }
+
+  /* スライダーの色（距離表示・点線と共通） */
+  input[type=range] { accent-color: var(--slider-color); }
+  .switch-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+
+  /* 切り替え通知 */
+  .fallback-box { margin-top: 8px; padding: 10px 12px; border: 2px solid #d93025; border-radius: 10px; background: #fff0ee; color: #a31f14; font-size: 12.5px; font-weight: bold; line-height: 1.6; }
+  .fallback-box small { display: block; margin-top: 4px; font-size: 10.5px; font-weight: normal; color: #7a3a33; word-break: break-all; }
+
+  /* クレジット表記 */
+  .credit-box { margin-top: 8px; padding: 10px 12px; border: 2px solid #333; border-radius: 10px; background: #fffbe6; text-align: center; }
+  .credit-box .credit-title { font-size: 10px; color: #777; font-weight: bold; }
+  .credit-box .credit-text { font-size: 15px; font-weight: 800; color: #333; margin-top: 2px; word-break: break-all; }
+  .credit-box .credit-sub { font-size: 10px; color: #777; margin-top: 4px; line-height: 1.5; }
+  .credit-badge {
+    position: fixed; bottom: calc(14px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%);
+    z-index: 90; max-width: calc(100vw - 20px); padding: 8px 16px; border: 2px solid #333; border-radius: 30px;
+    background: rgba(255,255,255,0.95); color: #333; font-size: 14px; font-weight: 800; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; box-shadow: 0 4px 16px rgba(0,0,0,0.12); pointer-events: none;
+  }
+  /* パネルを開いている間は、3Dシーンの中央に合わせてずらす */
+  @media screen and (min-width: 481px) {
+    body:has(#ui-panel:not(.collapsed)) .credit-badge { left: calc(50% + (var(--panel-width) + 20px) / 2); }
+  }
+</style>
+</head>
+<body>
+
+<div id="ui-panel">
+  <div class="panel-header" id="panelHeader">
+    <h1 class="app-title">🎧聞こえ方シミュレーター</h1>
+    <span id="toggle-text">閉じる</span>
+  </div>
+
+  <div id="ui-content">
+    <p class="app-description">マネキンをドラッグして位置を決め、<b>ヘッドホン</b>で聞いてみてください。<br>足元の 🔺 をドラッグすると向きを変えられます。</p>
+
+    <div class="input-group group-a">
+      <div class="section-header"><strong>A (聞く人)</strong></div>
+      <div class="input-row">
+        <div class="input-item"><span class="hint">名前</span><input type="text" id="nL" placeholder="名前A"></div>
+        <div class="input-item" style="flex:0.6"><span class="hint">性別</span><select id="gL"><option value="male">男</option><option value="female" selected>女</option></select></div>
+      </div>
+      <div class="input-row">
+        <div class="input-item"><span class="hint">身長 (cm)</span><input type="number" id="hL" value="158" step="0.1"></div>
+        <div class="input-item" style="flex:0.35"><span class="hint">色</span><input type="color" id="cL" class="color-picker" value="#ffcc99"></div>
+      </div>
+    </div>
+
+    <div class="input-group group-b">
+      <div class="section-header"><strong>B （話す人）</strong></div>
+      <div class="input-row">
+        <div class="input-item"><span class="hint">名前</span><input type="text" id="nS" placeholder="名前B"></div>
+        <div class="input-item" style="flex:0.6"><span class="hint">性別</span><select id="gS"><option value="male" selected>男</option><option value="female">女</option></select></div>
+      </div>
+      <div class="input-row">
+        <div class="input-item"><span class="hint">身長 (cm)</span><input type="number" id="hS" value="171.5" step="0.1"></div>
+        <div class="input-item" style="flex:0.35"><span class="hint">色</span><input type="color" id="cS" class="color-picker" value="#ffad60"></div>
+      </div>
+    </div>
+
+    <div class="input-group group-s">
+      <div class="section-header"><strong>環境</strong></div>
+      <div class="input-item">
+        <span class="hint">残響: <span id="rvo" style="color:#333; font-weight:bold;"></span></span>
+        <input type="range" id="rv" min="0" max="100" value="5">
+      </div>
+      <div class="input-item">
+        <span class="hint">声の指向性: <span id="dro" style="color:#333; font-weight:bold;"></span></span>
+        <input type="range" id="dr" min="0" max="100" value="30">
+      </div>
+      <p class="note" style="margin:0">指向性：Bが背を向けると高い音が減って、こもって聞こえる強さ。</p>
+    </div>
+
+    <div style="padding: 0 5px;">
+      <span class="hint">📍 Bの位置（Aから見て）</span>
+      <div class="anim-controls" style="margin-bottom:10px">
+        <button class="btn-anim" data-pre="front">正面</button>
+        <button class="btn-anim" data-pre="right">右隣</button>
+        <button class="btn-anim" data-pre="left">左隣</button>
+        <button class="btn-anim" data-pre="back">真後ろ</button>
+        <button class="btn-anim" data-pre="backR">右斜め後ろ</button>
+        <button class="btn-anim" data-pre="far">3m先</button>
+        <button class="btn-anim" id="faceEach">お互い向き合う</button>
+      </div>
+    </div>
+
+    <div class="input-group group-s">
+    <div class="section-header"><strong>しゃべらせる</strong></div>
+    <div class="anim-controls">
+      <button id="tabTts" class="btn-anim sel">読み上げ</button>
+      <button id="tabMic" class="btn-anim">マイク</button>
+      <button id="tabFile" class="btn-anim">音声ファイル</button>
+    </div>
+
+    <div id="paneTts">
+      <textarea id="text">もしもーし。聞こえてる？</textarea>
+      <div style="margin-top:8px">
+        <select id="engine">
+          <option value="piper" selected>piper-plus（ブラウザ内AI音声・標準）</option>
+          <option value="speech">ブラウザ読み上げ（WebSpeechAPI）</option>
+          <option value="fm">WebAudio合成（ロボット声・オフライン向き）</option>
+        </select>
+      </div>
+
+      <div id="piperBox" style="margin-top:8px">
+        <select id="ppVoice">
+          <option value="ayousanz/piper-plus-tsukuyomi-chan">つくよみちゃん</option>
+        </select>
+        <div class="input-item" style="margin-top:8px">
+          <span class="hint">話す速さ: <span id="ppRateo" style="color:#333; font-weight:bold;"></span></span>
+          <input type="range" id="ppRate" min="50" max="200" value="100">
+        </div>
+        <div class="credit-box">
+          <div class="credit-title">🎙️ クレジット表記（この声を使うとき）</div>
+          <div class="credit-text" id="creditText"></div>
+          <div class="credit-sub">動画・画面録画などでこの声を使うときは、上のクレジットを一緒に載せてください。また、個人・団体への攻撃や批判、政治・宗教上の主張、アダルト用途の文章の入力や、生成音声を素材として再配布することはご遠慮ください。つくよみちゃんコーパスの利用規約にも従ってください。<br>音声合成エンジン: piper-plus（MIT License）</div>
+        </div>
+        <p class="note">ブラウザの中でAIが音声を合成します（入力した文章は外部に送信されません）。初回のみ、音声エンジン（約19MB）とモデル（約38MB）をネットから取得するため時間がかかります。2回目以降はキャッシュを使います。うまく動かない場合は自動でWebAudio合成に切り替わります。「ブラウザ読み上げ」も選べます。</p>
+      </div>
+
+      <div id="speechBox" class="hide" style="margin-top:8px">
+        <div class="input-item">
+          <span class="hint">声の種類</span>
+          <select id="wsVoice"><option value="">自動（日本語の声）</option></select>
+        </div>
+        <div class="input-item" style="margin-top:8px">
+          <span class="hint">話す速さ: <span id="wsRateo" style="color:#333; font-weight:bold;"></span></span>
+          <input type="range" id="wsRate" min="50" max="200" value="100">
+        </div>
+        <div class="input-item" style="margin-top:8px">
+          <span class="hint">声の高さ: <span id="wsPitcho" style="color:#333; font-weight:bold;"></span></span>
+          <input type="range" id="wsPitch" min="0" max="200" value="100">
+        </div>
+        <p class="note">端末の読み上げ音声（WebSpeechAPI）を、タブ音声の共有経由で取り込み、Bの位置から聞こえるように変換します。初回は共有ダイアログが出るので、<b>「このタブ」を選び「タブの音声も共有」にチェック</b>してください。<br>
+        ⚠️ ブラウザや端末によっては上手くいかないことがあります（音が出ない・元の声が重なって聞こえる・スマホ非対応など）。その場合は、上の選択肢から<b>「WebAudio合成」</b>を使ってください。共有に失敗したときは自動でWebAudio合成に切り替わります。</p>
+      </div>
+
+      <div id="fmBox" class="hide" style="margin-top:8px">
+        <div class="input-item">
+          <span class="hint">声の高さ: <span id="pitcho" style="color:#333; font-weight:bold;"></span></span>
+          <input type="range" id="pitch" min="90" max="300" value="130">
+        </div>
+        <div class="input-item">
+          <span class="hint">話す速さ: <span id="rateo" style="color:#333; font-weight:bold;"></span></span>
+          <input type="range" id="rate" min="50" max="200" value="100">
+        </div>
+        <p class="note">ブラウザ内で合成するロボット風の声です。漢字は読み仮名辞書（初回のみ約17MBをネットから取得）で変換して読みます。辞書が取れない場合はひらがな・カタカナ・ローマ字のみ読めます。</p>
+      </div>
+
+      <div id="fallbackNote" class="fallback-box hide"></div>
+
+      <button id="speak" class="switch-btn">▶ 再生</button>
+    </div>
+
+    <div id="paneMic" class="hide">
+      <button id="micBtn" class="switch-btn" style="margin-top:0">🎤 マイクをオン</button>
+      <p class="note">あなたの声が、Bの位置から聞こえるように変換されます。<b>ハウリング防止のためヘッドホン必須</b>。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。
+</p>
+    </div>
+
+    <div id="paneFile" class="hide">
+      <input type="file" id="file" accept="audio/*">
+      <p class="note">選んだ音声を、Bの声として再生します。<br> ※入力されたテキストやマイク音声は、お使いの端末（ブラウザ）内でのみ処理され、外部サーバーに保存されることはありません。</p>
+    </div>
+
+    <div class="anim-controls" style="align-items:center">
+      <label class="check" style="flex:1"><input type="checkbox" id="loop">ループ再生</label>
+      <button id="stop" class="btn-anim" style="flex:1">■ 停止</button>
+    </div>
+    <div class="status" id="status" style="margin-top:0"></div>
+    </div>
+
+    <button class="switch-btn" id="swapAB" style="margin-top:0">🔄 AとBを入れ替える</button>
+
+    <div class="info-box">
+      <div class="info-row"><span class="info-label">📏 身長差</span><span class="info-value"><span id="rHdiff">-</span><span class="unit">cm</span></span></div>
+      <div class="info-row"><span class="info-label">🔊 距離（口→耳）</span><span class="info-value" id="rDist">-</span></div>
+      <div class="info-row"><span class="info-label">🧭 Aから見た方向</span><span class="info-value" id="rAz">-</span></div>
+      <div class="info-row"><span class="info-label">↕️ 高さ差（口−耳）</span><span class="info-value" id="rDh">-</span></div>
+      <div class="info-row"><span class="info-label">📐 仰角</span><span class="info-value" id="rEl">-</span></div>
+      <div class="info-row"><span class="info-label">⏱️ 声の到達遅れ</span><span class="info-value" id="rDelay">-</span></div>
+      <div class="info-row"><span class="info-label">🗣️ Bの向き</span><span class="info-value" id="rFace">-</span></div>
+    </div>
+
+    <div id="info-container">
+      <button class="share-btn" id="shareBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"></path>
+        </svg>で結果をシェアする
+      </button>
+
+      <div class="other-tools-link">
+        <p style="font-size: 10px; color: #888; margin-bottom: 8px;">こちらもチェック❣🤩</p>
+        <a href="https://qwertyaz111.github.io/my-site-hub/">ツール・シミュレーター一覧</a>
+      </div>
+      <div class="usage-notes">
+        HRTF立体音響・距離減衰・到達遅れ・高音の減衰・残響・身長差による上下の方向を計算しています。<br>
+        距離や向きを変えながら、聞こえ方の違いを試してみてください。
+      </div>
+      <div class="usage-notes" style="margin-top:8px">
+        スクショ投稿や加工、トレース等はご自由にお楽しみください。<br>
+        ※営利目的や商用利用はご遠慮ください。
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="canvas-container"></div>
+
+<div id="creditBadge" class="credit-badge hide">🎙️ <span id="creditBadgeText"></span></div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.158.0/build/three.module.js';
+
+const $ = id => document.getElementById(id);
+
+/* ======================= 状態 ======================= */
+const SPEED_OF_SOUND = 343;
+const EAR_OFF = 0.10, MOUTH_OFF = 0.13;      // 身長から耳・口までの目安 [m]
+const L = { x: 0, z: 0, a: Math.PI };         // A（聞く人）: a は向き(rad)。前方 = (sin a, cos a)
+const P = { x: 0.7, z: 0, a: 0 };             // B（話す人）
+const heights = { L: 158, S: 171.5 };
+const genders = { L: 'female', S: 'male' };
+const colors = { L: '#ffcc99', S: '#ffad60' };
+const names = { L: '', S: '' };
+
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const deg = r => r * 180 / Math.PI;
+const fwd = o => [Math.sin(o.a), Math.cos(o.a)];
+const faceTo = (o, t) => Math.atan2(t.x - o.x, t.z - o.z);
+
+/* ======================= Web Audio ======================= */
+let ac, voiceIn, lp, dly, dg, panner, comp, rvSend, rvLP, conv, rvOut;
+
+function makeIR(ctx, sec = 1.6) {
+  const len = Math.floor(ctx.sampleRate * sec);
+  const buf = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) {
+      const t = i / len;
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 3.2);
+    }
+  }
+  return buf;
+}
+
+function ensureAudio() {
+  if (ac) { if (ac.state === 'suspended') ac.resume(); return; }
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  voiceIn = ac.createGain();
+  lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 0.5; lp.frequency.value = 20000;
+  dly = ac.createDelay(1);
+  dg = ac.createGain();
+  panner = ac.createPanner();
+  panner.panningModel = 'HRTF';
+  panner.distanceModel = 'inverse';
+  panner.refDistance = 1; panner.rolloffFactor = 0;   // 距離減衰は自前で計算
+  comp = ac.createDynamicsCompressor();
+  voiceIn.connect(lp); lp.connect(dly); dly.connect(dg); dg.connect(panner); panner.connect(comp);
+
+  rvSend = ac.createGain();
+  rvLP = ac.createBiquadFilter(); rvLP.type = 'lowpass'; rvLP.frequency.value = 5000;
+  conv = ac.createConvolver(); conv.buffer = makeIR(ac);
+  rvOut = ac.createGain();
+  voiceIn.connect(rvSend); rvSend.connect(rvLP); rvLP.connect(conv); conv.connect(rvOut); rvOut.connect(comp);
+
+  comp.connect(ac.destination);
+  updateAll();
+}
+
+function setParam(p, v, tc = 0.04) { p.setTargetAtTime(v, ac.currentTime, tc); }
+function setPos(node, x, y, z) {
+  if (node.positionX) { setParam(node.positionX, x); setParam(node.positionY, y); setParam(node.positionZ, z); }
+  else node.setPosition(x, y, z);
+}
+
+
+
+/* ======================= 幾何の計算 ======================= */
+function compute() {
+  const earY = heights.L / 100 - EAR_OFF;
+  const mouthY = heights.S / 100 - MOUTH_OFF;
+  const dx = P.x - L.x, dz = P.z - L.z, dy = mouthY - earY;
+  const hd = Math.hypot(dx, dz);
+  const d = Math.max(Math.hypot(hd, dy), 0.15);
+
+  // 聞く人から見た相対方位
+  const f = fwd(L), r = [-f[1], f[0]];
+  const az = Math.atan2(dx*r[0] + dz*r[1], dx*f[0] + dz*f[1]);   // 0:前 +:右
+  const el = Math.atan2(dy, hd);
+
+  // 話す人の口が聞く人の方を向いているか (-1:真後ろ 1:正面)
+  const sf = fwd(P);
+  const toL = hd > 1e-6 ? [-dx/hd, -dz/hd] : [sf[0], sf[1]];
+  const cosPhi = sf[0]*toL[0] + sf[1]*toL[1];
+
+  return { earY, mouthY, dx, dy, dz, hd, d, az, el, cosPhi };
+}
+
+function describeAz(az) {
+  const a = Math.abs(deg(az));
+  const side = az >= 0 ? '右' : '左';
+  if (a < 20) return '正面';
+  if (a < 65) return side + '斜め前';
+  if (a < 115) return side + '真横';
+  if (a < 160) return side + '斜め後ろ';
+  return '真後ろ';
+}
+
+function updateAudio(c) {
+  if (!ac) return;
+  const dirAmt = $('dr').value / 100;
+  const rvAmt = $('rv').value / 100;
+
+  // 聞く人（耳の位置と向き）
+  const lf = fwd(L);
+  const ls = ac.listener;
+  if (ls.positionX) {
+    setParam(ls.positionX, L.x); setParam(ls.positionY, c.earY); setParam(ls.positionZ, L.z);
+    setParam(ls.forwardX, lf[0]); setParam(ls.forwardY, 0); setParam(ls.forwardZ, lf[1]);
+    setParam(ls.upX, 0); setParam(ls.upY, 1); setParam(ls.upZ, 0);
+  } else {
+    ls.setPosition(L.x, c.earY, L.z);
+    ls.setOrientation(lf[0], 0, lf[1], 0, 1, 0);
+  }
+
+  // 話す人（口の位置）
+  setPos(panner, P.x, c.mouthY, P.z);
+
+  // 距離による音量（1/r、0.5m以内は一定）
+  const front = (1 + c.cosPhi) / 2;                    // 0(背中)〜1(正面)
+  const dirGain = 1 - dirAmt * 0.45 * (1 - front);
+  const gain = Math.min(1, 0.5 / c.d) * dirGain;
+  setParam(dg.gain, gain);
+
+  // 到達遅れ
+  setParam(dly.delayTime, c.d / SPEED_OF_SOUND, 0.06);
+
+  // 高音の減衰：声の指向性 + 空気吸収
+  const cutDir = 20000 - (20000 - 1200) * dirAmt * Math.pow(1 - front, 1.2);
+  const cutAir = 20000 / (1 + c.d * 0.18);
+  setParam(lp.frequency, Math.max(500, Math.min(cutDir, cutAir)));
+
+  // 残響：拡散音は距離に依らず一定 → 遠いほど直接音との比率が増える
+  setParam(rvSend.gain, 0.10 * rvAmt);
+  setParam(rvOut.gain, 1.0);
+}
+
+/* ======================= 表示 ======================= */
+function updateReadout(c) {
+  $('rHdiff').textContent = Math.abs(heights.L - heights.S).toFixed(1);
+  const u = t => `<span class="unit">${t}</span>`;
+  $('rDist').innerHTML = c.d.toFixed(2) + u('m');
+  $('rAz').innerHTML = describeAz(c.az) + u(Math.round(deg(c.az)) + '°');
+  const dh = c.dy * 100;
+  $('rDh').innerHTML = Math.abs(Math.round(dh)) + u('cm ' + (dh >= 0 ? '上' : '下'));
+  const e = deg(c.el);
+  $('rEl').innerHTML = Math.abs(e) < 3 ? 'ほぼ水平' : Math.abs(e).toFixed(0) + u('° ' + (e > 0 ? '上から' : '下から'));
+  $('rDelay').innerHTML = (c.d / SPEED_OF_SOUND * 1000).toFixed(1) + u('ms');
+  const ph = deg(Math.acos(clamp(c.cosPhi, -1, 1)));
+  $('rFace').textContent = ph < 30 ? 'こちらを向いている' : ph < 100 ? '横向き' : '背を向けている';
+}
+
+
+
+/* ======================= 3D シーン ======================= */
+const container = $('canvas-container');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xffffff);
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+container.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x888888, 2.5));
+scene.add(new THREE.GridHelper(200, 400, 0xeeeeee, 0xf5f5f5));
+
+function makeTextSprite(w, h, scaleX, plain) {
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const tex = new THREE.CanvasTexture(cv);
+  if (!plain && THREE.SRGBColorSpace) tex.colorSpace = THREE.SRGBColorSpace;
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial(plain ? { map: tex } : { map: tex, depthTest: false, transparent: true }));
+  sp.scale.set(scaleX, plain ? 0.3 : scaleX * h / w, 1);
+  if (!plain) sp.renderOrder = 10;
+  sp.userData.set = (text, color) => {
+    const c2 = cv.getContext('2d');
+    c2.clearRect(0, 0, w, h);
+    if (plain) {
+      c2.font = 'bold 40px sans-serif'; c2.fillStyle = '#333'; c2.textAlign = 'center';
+      c2.fillText(text, w / 2, 64);
+      tex.needsUpdate = true;
+      return;
+    }
+    c2.font = 'bold ' + Math.round(h * 0.46) + 'px sans-serif';
+    c2.textAlign = 'center'; c2.textBaseline = 'middle';
+    c2.lineJoin = 'round'; c2.lineWidth = Math.round(h * 0.12); c2.strokeStyle = 'rgba(255,255,255,0.95)';
+    c2.strokeText(text, w / 2, h / 2);
+    c2.fillStyle = color || '#333';
+    c2.fillText(text, w / 2, h / 2);
+    tex.needsUpdate = true;
+  };
+  return sp;
+}
+
+/* ---------- マネキン ---------- */
+function buildFigure(color, hCm, gender) {
+  const group = new THREE.Group();
+  const h = hCm * 0.01;
+  const bodyMat = new THREE.MeshPhongMaterial({ color: color, transparent: true, opacity: 0.85 });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+
+  const headH = h * 0.13, neckH = h * 0.05, torsoH = h * 0.37, legH = h * 0.45;
+  const eyeY = h * (gender === 'male' ? 0.904 : 0.903);
+  const torsoW = (gender === 'male' ? 0.26 : 0.21) * (h / 1.7);
+  const torsoDepth = torsoW * 0.5;
+
+  const headBox = new THREE.Group(); headBox.position.y = eyeY;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(headH * 0.8, 16, 16), bodyMat);
+  head.position.y = (h - headH * 0.5) - eyeY; headBox.add(head);
+  [-1, 1].forEach(side => {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(headH * 0.12, 12, 12), eyeMat);
+    eye.position.set(side * (headH * 0.28), 0, (headH * 0.7)); headBox.add(eye);
+  });
+  group.add(headBox);
+
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(headH * 0.3, headH * 0.3, neckH, 16), bodyMat);
+  neck.position.y = h - headH - (neckH * 0.5); group.add(neck);
+
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(torsoW, torsoH, torsoDepth), bodyMat);
+  torso.position.y = legH + (torsoH * 0.5); group.add(torso);
+
+  [-1, 1].forEach(side => {
+    const anchor = new THREE.Group();
+    anchor.position.set(side * (torsoW * 0.6), legH + torsoH - (torsoW * 0.15), 0);
+    const armLen = h * 0.38;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(torsoW * 0.3, armLen, torsoW * 0.3), bodyMat);
+    mesh.position.y = -armLen * 0.5; anchor.add(mesh); group.add(anchor);
+    anchor.rotation.z = side * (5 * Math.PI / 180);
+  });
+
+  [-1, 1].forEach(side => {
+    const anchor = new THREE.Group(); anchor.position.set(side * (torsoW * 0.25), legH, 0);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(torsoW * 0.4, legH, torsoW * 0.4), bodyMat);
+    mesh.position.y = -legH * 0.5; anchor.add(mesh); group.add(anchor);
+  });
+  return group;
+}
+
+const people = { L: null, S: null };
+let handleHits = [], bodyHits = [];
+
+function disposeTree(obj) {
+  obj.traverse(n => {
+    if (n.geometry) n.geometry.dispose();
+    if (n.material) {
+      if (n.material.map) n.material.map.dispose();
+      n.material.dispose();
+    }
+  });
+}
+
+function labelText(who) {
+  const nm = names[who] || (who === 'L' ? 'A' : 'B');
+  return nm + ' (' + (+heights[who]).toFixed(1) + 'cm)';
+}
+
+function buildPerson(who) {
+  const old = people[who];
+  if (old) { scene.remove(old.root); disposeTree(old.root); }
+  const hCm = heights[who], h = hCm / 100;
+  const col = colors[who];
+  const root = new THREE.Group();
+  root.add(buildFigure(col, hCm, genders[who]));
+
+  // 足元のリング・向きの矢印・向きハンドル
+  const accent = new THREE.Color(col).multiplyScalar(0.8);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.27, 0.31, 48), new THREE.MeshBasicMaterial({ color: accent, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.012; root.add(ring);
+
+  const tri = new THREE.Shape();
+  tri.moveTo(-0.1, 0.36); tri.lineTo(0.1, 0.36); tri.lineTo(0, 0.52); tri.closePath();
+  const arrow = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: accent, side: THREE.DoubleSide }));
+  arrow.rotation.x = Math.PI / 2; arrow.position.y = 0.014; root.add(arrow);
+
+  const handleHit = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 6), new THREE.MeshBasicMaterial({ visible: false }));
+  handleHit.position.set(0, 0.05, 0.5); handleHit.userData = { who, kind: 'handle' }; root.add(handleHit);
+
+  const bodyHit = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, h, 10), new THREE.MeshBasicMaterial({ visible: false }));
+  bodyHit.position.y = h / 2; bodyHit.userData = { who, kind: 'body' }; root.add(bodyHit);
+
+  const label = makeTextSprite(512, 128, 1.2, true);
+  label.position.y = h + 0.2; label.userData.set(labelText(who), '#333'); root.add(label);
+
+  root.visible = !(who === 'L' && viewMode === 'a');
+  scene.add(root);
+  people[who] = { root, label, handleHit, bodyHit };
+  handleHits = [people.L, people.S].filter(Boolean).map(p => p.handleHit);
+  bodyHits = [people.L, people.S].filter(Boolean).map(p => p.bodyHit);
+}
+
+/* ---------- 声の経路（Bの口 → Aの耳）と距離表示 ---------- */
+const pathMat = new THREE.MeshBasicMaterial({ color: 0xff9f1c, depthTest: false, transparent: true, opacity: 0.95 });
+const pathMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 1, 8), pathMat);
+const pathHead = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.1, 14), pathMat);
+pathMesh.renderOrder = 5; pathHead.renderOrder = 5;
+scene.add(pathMesh); scene.add(pathHead);
+
+const SLIDER_COLOR = '#0075ff';   // スライダー（CSSの --slider-color）と同じ色
+const groundLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineDashedMaterial({ color: new THREE.Color(SLIDER_COLOR), dashSize: 0.08, gapSize: 0.06 }));
+scene.add(groundLine);
+const distSprite = makeTextSprite(384, 96, 0.9);
+scene.add(distSprite);
+/* クレジット（3D空間内・Bの頭上、名前ラベルの上） */
+const creditSprite = makeTextSprite(1024, 96, 2.0);
+creditSprite.visible = false;
+scene.add(creditSprite);
+let lastDistText = '';
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
+
+function updateScene3D(c) {
+  [['L', L], ['S', P]].forEach(([k, o]) => {
+    const p = people[k]; if (!p) return;
+    p.root.position.set(o.x, 0, o.z);
+    p.root.rotation.y = o.a;
+  });
+
+  const ear = new THREE.Vector3(L.x, c.earY, L.z);
+  const mouth = new THREE.Vector3(P.x, c.mouthY, P.z);
+  const dirv = ear.clone().sub(mouth);
+  const len = dirv.length();
+  if (len < 0.25) {
+    pathMesh.visible = false; pathHead.visible = false;
+  } else {
+    dirv.normalize();
+    const end = ear.clone().addScaledVector(dirv, -0.09);
+    const seg = end.clone().sub(mouth);
+    const segLen = seg.length();
+    pathMesh.visible = true; pathHead.visible = true;
+    pathMesh.position.copy(mouth).addScaledVector(seg.normalize(), segLen / 2);
+    pathMesh.scale.set(1, segLen, 1);
+    pathMesh.quaternion.setFromUnitVectors(Y_AXIS, dirv);
+    pathHead.position.copy(ear).addScaledVector(dirv, -0.05);
+    pathHead.quaternion.setFromUnitVectors(Y_AXIS, dirv);
+  }
+
+  groundLine.geometry.setFromPoints([new THREE.Vector3(L.x, 0.012, L.z), new THREE.Vector3(P.x, 0.012, P.z)]);
+  groundLine.computeLineDistances();
+  distSprite.position.set((L.x + P.x) / 2, 0.14, (L.z + P.z) / 2);
+  const txt = c.hd.toFixed(2) + ' m';
+  if (txt !== lastDistText) { distSprite.userData.set(txt, SLIDER_COLOR); lastDistText = txt; }
+  distSprite.visible = c.hd > 0.2;
+  creditSprite.position.set(P.x, heights.S / 100 + 0.5, P.z);
+}
+
+function updateAll() {
+  const c = compute();
+  updateAudio(c);
+  updateReadout(c);
+  updateScene3D(c);
+}
+
+/* ======================= カメラ ======================= */
+const cam = { theta: 0.35, phi: 0.5, dist: 3.6, tTheta: 0.35, tPhi: 0.5, tDist: 3.6 };
+let viewMode = 'persp';
+const camTarget = new THREE.Vector3(0.35, 0.8, 0);
+let viewKey = '';
+
+function autoDist() {
+  const span = Math.hypot(P.x - L.x, P.z - L.z);
+  return Math.max(3, span * 1.3 + 2.2);
+}
+
+function setView(v) {
+  viewMode = v;
+  document.querySelectorAll('[data-view]').forEach(b => b.classList.toggle('sel', b.dataset.view === v));
+  if (people.L) people.L.root.visible = v !== 'a';
+  const d = autoDist();
+  if (v === 'persp') { cam.tTheta = 0.35; cam.tPhi = 0.5; cam.tDist = d; }
+  else if (v === 'top') { cam.tTheta = 0; cam.tPhi = 1.5; cam.tDist = d * 1.1; }
+  else if (v === 'side') { cam.tTheta = 0; cam.tPhi = 0.06; cam.tDist = d; }
+}
+
+function applyViewSettings() {
+  const panel = $('ui-panel');
+  const collapsed = panel.classList.contains('collapsed');
+  const mobile = window.innerWidth <= 480;
+  const shiftX = (!mobile && !collapsed) ? -(panel.offsetWidth + 20) / 2 : 0;
+  const shiftY = 0;
+  const key = [viewMode, window.innerWidth, window.innerHeight, Math.round(shiftX), Math.round(shiftY)].join('|');
+  if (key === viewKey) return;
+  viewKey = key;
+  camera.fov = viewMode === 'a' ? 75 : 50;
+  camera.aspect = window.innerWidth / window.innerHeight;
+  if (viewMode !== 'a' && (shiftX || shiftY)) {
+    camera.setViewOffset(window.innerWidth, window.innerHeight, shiftX, shiftY, window.innerWidth, window.innerHeight);
+  } else {
+    camera.clearViewOffset();
+  }
+  camera.updateProjectionMatrix();
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  cam.theta += (cam.tTheta - cam.theta) * 0.25;
+  cam.phi += (cam.tPhi - cam.phi) * 0.25;
+  cam.dist += (cam.tDist - cam.dist) * 0.25;
+  applyViewSettings();
+
+  if (viewMode === 'a') {
+    const eye = heights.L / 100 - 0.07;
+    const f = fwd(L);
+    camera.position.set(L.x, eye, L.z);
+    camera.lookAt(L.x + f[0], eye, L.z + f[1]);
+  } else {
+    const gx = (L.x + P.x) / 2, gz = (L.z + P.z) / 2, gy = Math.max(heights.L, heights.S) / 200;
+    camTarget.x += (gx - camTarget.x) * 0.2;
+    camTarget.y += (gy - camTarget.y) * 0.2;
+    camTarget.z += (gz - camTarget.z) * 0.2;
+    const cp = Math.cos(cam.phi);
+    camera.position.set(
+      camTarget.x + Math.sin(cam.theta) * cp * cam.dist,
+      camTarget.y + Math.sin(cam.phi) * cam.dist,
+      camTarget.z + Math.cos(cam.theta) * cp * cam.dist
+    );
+    camera.lookAt(camTarget);
+  }
+  renderer.render(scene, camera);
+}
+
+/* ======================= ポインタ操作 ======================= */
+const dom = renderer.domElement;
+const ray = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const pointers = new Map();
+let drag = null, pinch = null;
+
+function setRay(e) {
+  const r = dom.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+}
+function groundHit(e) {
+  setRay(e);
+  const v = new THREE.Vector3();
+  return ray.ray.intersectPlane(groundPlane, v) ? v : null;
+}
+const objOf = who => who === 'L' ? L : P;
+
+dom.addEventListener('pointerdown', e => {
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  try { dom.setPointerCapture(e.pointerId); } catch (_) {}
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, dist0: cam.tDist };
+    drag = null; return;
+  }
+  if (viewMode === 'a') { drag = { mode: 'look' }; dom.style.cursor = 'grabbing'; return; }
+  setRay(e);
+  let hit = ray.intersectObjects(handleHits, false)[0];
+  if (hit) { drag = { mode: 'rot', o: objOf(hit.object.userData.who) }; }
+  else {
+    hit = ray.intersectObjects(bodyHits, false)[0];
+    if (hit) {
+      const o = objOf(hit.object.userData.who);
+      const g = groundHit(e);
+      drag = { mode: 'move', o, offX: g ? o.x - g.x : 0, offZ: g ? o.z - g.z : 0 };
+    } else drag = { mode: 'orbit' };
+  }
+  dom.style.cursor = 'grabbing';
+});
+
+dom.addEventListener('pointermove', e => {
+  const prev = pointers.get(e.pointerId);
+  if (!prev) return;
+  const dx = e.clientX - prev.x, dy = e.clientY - prev.y;
+  prev.x = e.clientX; prev.y = e.clientY;
+
+  if (pointers.size === 2 && pinch) {
+    const [a, b] = [...pointers.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    cam.tDist = clamp(pinch.dist0 * pinch.d0 / d, 0.6, 40);
+    return;
+  }
+  if (!drag) return;
+  if (drag.mode === 'orbit') {
+    cam.tTheta -= dx * 0.005;
+    cam.tPhi = clamp(cam.tPhi - dy * 0.005, 0.03, 1.5);
+    cam.theta = cam.tTheta; cam.phi = cam.tPhi;
+  } else if (drag.mode === 'look') {
+    L.a += dx * 0.006;
+    updateAll();
+  } else {
+    const g = groundHit(e);
+    if (!g) return;
+    if (drag.mode === 'move') {
+      drag.o.x = clamp(g.x + drag.offX, -8, 8);
+      drag.o.z = clamp(g.z + drag.offZ, -8, 8);
+    } else {
+      drag.o.a = Math.atan2(g.x - drag.o.x, g.z - drag.o.z);
+    }
+    updateAll();
+  }
+});
+
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) pinch = null;
+  if (pointers.size === 0) { drag = null; dom.style.cursor = 'grab'; }
+}
+dom.addEventListener('pointerup', endPointer);
+dom.addEventListener('pointercancel', endPointer);
+dom.addEventListener('wheel', e => {
+  e.preventDefault();
+  cam.tDist = clamp(cam.tDist * (e.deltaY > 0 ? 1.05 : 1 / 1.05), 0.6, 40);
+}, { passive: false });
+
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  viewKey = '';
+});
+
+/* ======================= パネル・入力 ======================= */
+$('panelHeader').addEventListener('click', () => {
+  const panel = $('ui-panel');
+  panel.classList.toggle('collapsed');
+  $('toggle-text').textContent = panel.classList.contains('collapsed') ? '開く' : '閉じる';
+});
+
+['L', 'S'].forEach(k => {
+  const rebuild = () => { buildPerson(k); updateAll(); };
+  $('n' + k).addEventListener('input', e => { names[k] = e.target.value; if (people[k]) people[k].label.userData.set(labelText(k), '#333'); });
+  $('g' + k).addEventListener('change', e => { genders[k] = e.target.value; rebuild(); });
+  $('c' + k).addEventListener('input', e => { colors[k] = e.target.value; rebuild(); });
+  $('h' + k).addEventListener('input', e => {
+    const v = parseFloat(e.target.value);
+    if (!isFinite(v)) return;
+    heights[k] = clamp(v, 60, 230); rebuild();
+  });
+  genders[k] = $('g' + k).value; colors[k] = $('c' + k).value; heights[k] = parseFloat($('h' + k).value) || heights[k];
+});
+
+function placeRel(fd, rd) {
+  const f = fwd(L), r = [-f[1], f[0]];
+  P.x = clamp(L.x + f[0] * fd + r[0] * rd, -8, 8);
+  P.z = clamp(L.z + f[1] * fd + r[1] * rd, -8, 8);
+  P.a = faceTo(P, L);
+  updateAll();
+  if (viewMode !== 'a') cam.tDist = Math.max(cam.tDist, autoDist());
+}
+const REL = { front: [1.0, 0], right: [0, 0.6], left: [0, -0.6], back: [-0.8, 0], backR: [-0.8, 0.8], far: [2.6, 1.5] };
+document.querySelectorAll('[data-pre]').forEach(b => b.addEventListener('click', () => placeRel(...REL[b.dataset.pre])));
+$('faceEach').addEventListener('click', () => { P.a = faceTo(P, L); L.a = faceTo(L, P); updateAll(); });
+document.querySelectorAll('[data-view]').forEach(b => b.addEventListener('click', () => setView(b.dataset.view)));
+$('swapAB').addEventListener('click', () => {
+  [names, genders, colors, heights].forEach(o => { const t = o.L; o.L = o.S; o.S = t; });
+  ['n', 'g', 'h', 'c'].forEach(pre => {
+    const a = $(pre + 'L'), b = $(pre + 'S');
+    const t = a.value; a.value = b.value; b.value = t;
+  });
+  buildPerson('L'); buildPerson('S');
+  updateAll();
+});
+$('shareBtn').addEventListener('click', () => {
+  const nA = names.L || 'A', nB = names.S || 'B';
+  const text = `${nA}(${(+heights.L).toFixed(1)}cm)と${nB}(${(+heights.S).toFixed(1)}cm)の声の聞こえ方をシミュレーション！\n#聞こえ方シミュレーター\n`;
+  window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(window.location.href)}`, '_blank');
+});
+
+function bindRange(id, fmt, fn) {
+  const el = $(id), out = $(id + 'o');
+  const f = () => { out.textContent = fmt(el.value); fn && fn(+el.value); updateAll(); };
+  el.addEventListener('input', f); f();
+}
+
+/* ======================= 再生制御 ======================= */
+let curSrc = null, curEl = null, micStream = null, micNode = null;
+const status = t => $('status').textContent = t || '';
+
+function stopAll() {
+  stopSpeech();
+  if (curSrc) { try { curSrc.onended = null; curSrc.stop(); } catch(_){} try { curSrc.disconnect(); } catch(_){} curSrc = null; }
+  if (curEl) { curEl.pause(); curEl = null; }
+}
+function playBuffer(buf) {
+  ensureAudio(); stopAll();
+  const s = ac.createBufferSource();
+  s.buffer = buf; s.loop = $('loop').checked;
+  s.connect(voiceIn);
+  s.onended = () => { if (curSrc === s) { curSrc = null; status('再生完了'); } };
+  s.start();
+  curSrc = s;
+  status('再生中…');
+}
+$('stop').addEventListener('click', () => { stopAll(); status('停止しました'); });
+
+/* ---------- タブ ---------- */
+const tabs = { Tts: 'paneTts', Mic: 'paneMic', File: 'paneFile' };
+Object.keys(tabs).forEach(k => $('tab' + k).addEventListener('click', () => {
+  Object.keys(tabs).forEach(j => {
+    $('tab' + j).classList.toggle('sel', j === k);
+    $(tabs[j]).classList.toggle('hide', j !== k);
+  });
+}));
+$('engine').addEventListener('change', () => {
+  const e = $('engine').value;
+  hideFallback();
+  $('piperBox').classList.toggle('hide', e !== 'piper');
+  $('speechBox').classList.toggle('hide', e !== 'speech');
+  $('fmBox').classList.toggle('hide', e !== 'fm');
+});
+
+/* ---------- 簡易フォルマント音声 ---------- */
+const KANA = {};
+Object.entries({ '': 'あいうえお', k: 'かきくけこ', s: 'さしすせそ', t: 'たちつてと', n: 'なにぬねの', h: 'はひふへほ',
+   m: 'まみむめも', r: 'らりるれろ', g: 'がぎぐげご', z: 'ざじずぜぞ', d: 'だぢづでど', b: 'ばびぶべぼ', p: 'ぱぴぷぺぽ' })
+  .forEach(([c, chars]) => [...chars].forEach((ch, i) => KANA[ch] = [c, 'aiueo'[i]]));
+Object.assign(KANA, { 'や': ['y','a'], 'ゆ': ['y','u'], 'よ': ['y','o'], 'わ': ['w','a'], 'を': ['','o'], 'ん': ['','N'], 'ゔ': ['b','u'] });
+const SMALL_Y = { 'ゃ': 'a', 'ゅ': 'u', 'ょ': 'o' };
+const SMALL_V = { 'ぁ': 'a', 'ぃ': 'i', 'ぅ': 'u', 'ぇ': 'e', 'ぉ': 'o' };
+const FORMANTS = {
+  a: [800, 1200, 2500], i: [300, 2300, 3000], u: [350, 1300, 2300],
+  e: [500, 1900, 2500], o: [500, 900, 2500], N: [250, 1000, 2200],
+};
+const UNVOICED = { k: 1800, s: 7000, t: 4500, h: 2500, p: 900, c: 5000, f: 2500 };
+const VOICED_C = new Set(['m','n','r','y','w','b','d','g','z','j','v','l']);
+
+function toMoras(text) {
+  const out = []; let skipped = 0, pendC = '';
+  const last = () => { for (let i = out.length - 1; i >= 0; i--) if (!out[i].pause) return out[i]; return null; };
+  for (let ch of text) {
+    const code = ch.codePointAt(0);
+    if (code >= 0x30A1 && code <= 0x30F6) ch = String.fromCodePoint(code - 0x60);   // カタカナ→ひらがな
+    if (KANA[ch]) { out.push({ c: KANA[ch][0], v: KANA[ch][1] }); continue; }
+    if (SMALL_Y[ch]) { const m = last(); if (m) m.v = SMALL_Y[ch]; continue; }
+    if (SMALL_V[ch]) { const m = last(); if (m) m.v = SMALL_V[ch]; continue; }
+    if (ch === 'っ' || ch === 'ッ') { out.push({ pause: 0.07 }); continue; }
+    if (ch === 'ー' || ch === '〜' || ch === '~') { const m = last(); if (m) out.push({ c: '', v: m.v, long: true }); continue; }
+    if ('、，,'.includes(ch)) { out.push({ pause: 0.25 }); continue; }
+    if ('。．.！!？?\n'.includes(ch)) { out.push({ pause: 0.45 }); continue; }
+    if (/\s/.test(ch)) { out.push({ pause: 0.12 }); continue; }
+    const lc = ch.toLowerCase();
+    if (/[aiueo]/.test(lc)) { out.push({ c: pendC, v: lc }); pendC = ''; continue; }
+    if (/[a-z]/.test(lc)) {
+      if (pendC) out.push({ c: pendC, v: 'u' });
+      pendC = lc; continue;
+    }
+    skipped++;
+  }
+  if (pendC) out.push({ c: pendC, v: 'u' });
+  return { moras: out, skipped };
+}
+
+async function formantSynth(text, f0, rate) {
+  const { moras, skipped } = toMoras(text);
+  if (!moras.length) throw new Error('読める文字（ひらがな/カタカナ/ローマ字）がありません。');
+  const sr = 44100, md = 0.16 / rate;
+  let total = 0;
+  for (const m of moras) total += m.pause ? m.pause : md;
+  const ctx = new OfflineAudioContext(1, Math.ceil((total + 0.4) * sr), sr);
+
+  const out = ctx.createGain(); out.gain.value = 6; out.connect(ctx.destination);
+  const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = f0;
+  const amp = ctx.createGain(); amp.gain.value = 0;
+  osc.connect(amp);
+  const fl = [0, 1, 2].map(i => {
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = [8, 10, 12][i];
+    const gn = ctx.createGain(); gn.gain.value = [1.0, 0.7, 0.4][i];
+    amp.connect(f); f.connect(gn); gn.connect(out); return f;
+  });
+  // 無声子音用ノイズ
+  const nb = ctx.createBuffer(1, sr, sr), nd = nb.getChannelData(0);
+  for (let i = 0; i < sr; i++) nd[i] = Math.random() * 2 - 1;
+  const ns = ctx.createBufferSource(); ns.buffer = nb; ns.loop = true;
+  const nf = ctx.createBiquadFilter(); nf.type = 'bandpass'; nf.Q.value = 0.8;
+  const ng = ctx.createGain(); ng.gain.value = 0;
+  ns.connect(nf); nf.connect(ng); ng.connect(out);
+
+  let t = 0.05, idx = 0;
+  const n = moras.length;
+  for (let i = 0; i < n; i++) {
+    const m = moras[i];
+    if (m.pause) {
+      amp.gain.setTargetAtTime(0, t, 0.015);
+      t += m.pause; continue;
+    }
+    const prog = idx / Math.max(1, n);
+    const pitch = f0 * (1.08 - 0.22 * prog) * (idx === 0 ? 1.05 : 1);
+    osc.frequency.setTargetAtTime(pitch, t, 0.04);
+    const F = FORMANTS[m.v] || FORMANTS.a;
+    fl.forEach((f, k) => f.frequency.setTargetAtTime(F[k], t, 0.02));
+
+    let cDur = 0, vAmp = m.v === 'N' ? 0.5 : 1;
+    if (UNVOICED[m.c]) {
+      cDur = m.c === 's' ? 0.09 : 0.05;
+      amp.gain.setTargetAtTime(0, t, 0.005);
+      nf.frequency.setValueAtTime(UNVOICED[m.c], t);
+      ng.gain.setTargetAtTime(m.c === 'p' || m.c === 'k' || m.c === 't' ? 0.5 : 0.35, t, 0.004);
+      ng.gain.setTargetAtTime(0, t + cDur, 0.008);
+    } else if (VOICED_C.has(m.c)) {
+      cDur = 0.045;
+      amp.gain.setTargetAtTime(0.3, t, 0.01);
+    }
+    amp.gain.setTargetAtTime(vAmp, t + cDur, 0.012);
+    const next = moras[i + 1];
+    if (!(next && next.long)) amp.gain.setTargetAtTime(0.0, t + md - 0.025, 0.012);
+    t += md; idx++;
+  }
+  osc.start(0); ns.start(0);
+  const buf = await ctx.startRendering();
+  const d = buf.getChannelData(0);
+  let peak = 0;
+  for (let i = 0; i < d.length; i++) peak = Math.max(peak, Math.abs(d[i]));
+  if (peak > 0) for (let i = 0; i < d.length; i++) d[i] *= 0.85 / peak;
+  return { buf, skipped };
+}
+
+/* ---------- 漢字→読み仮名（kuromoji.js をCDNから遅延読み込み） ---------- */
+let kuro = null;
+function loadKuromoji() {
+  if (kuro) return kuro;
+  kuro = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/build/kuromoji.js';
+    s.onload = () => window.kuromoji
+      .builder({ dicPath: 'https://cdn.jsdelivr.net/npm/kuromoji@0.1.2/dict/' })
+      .build((err, tk) => err ? reject(err) : resolve(tk));
+    s.onerror = () => reject(new Error('辞書ライブラリを読み込めません（ネット接続を確認してください）'));
+    document.head.appendChild(s);
+  });
+  kuro.catch(() => { kuro = null; });
+  return kuro;
+}
+const DIGITS = ['ぜろ','いち','に','さん','よん','ご','ろく','なな','はち','きゅう'];
+async function toReading(text) {
+  text = text.normalize('NFKC').replace(/[0-9]/g, d => DIGITS[+d]);
+  if (!/[一-鿿々〆ヵヶ]/.test(text)) return text;
+  status('漢字の読み辞書を読み込み中…（初回のみ・時間がかかることがあります）');
+  const tk = await loadKuromoji();
+  return tk.tokenize(text).map(t => {
+    if (t.pos === '助詞' && t.surface_form === 'は') return 'わ';
+    if (t.pos === '助詞' && t.surface_form === 'へ') return 'え';
+    return (t.reading && t.reading !== '*') ? t.reading : t.surface_form;
+  }).join('');
+}
+
+/* ---------- WebSpeechAPI ----------
+   speechSynthesis の音は WebAudio に直接つなげないため、
+   「タブ音声の共有(getDisplayMedia)」で取り込み、ストリームを WebAudio の入口(voiceIn)へ流す。 */
+const hasSpeech = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+let capStream = null, capSrc = null, capGain = null, speechActive = false, speechToken = 0;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function loadVoices() {
+  if (!hasSpeech) return;
+  const sel = $('wsVoice'), cur = sel.value;
+  const all = speechSynthesis.getVoices();
+  sel.innerHTML = '<option value="">自動（日本語の声）</option>';
+  all.forEach((v, i) => {
+    if (!/^ja/i.test(v.lang)) return;
+    const o = document.createElement('option');
+    o.value = String(i); o.textContent = v.name + (v.localService ? '' : '（オンライン）');
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+if (hasSpeech) { loadVoices(); speechSynthesis.onvoiceschanged = loadVoices; }
+
+async function ensureCapture() {
+  if (capStream && capStream.getAudioTracks().some(t => t.readyState === 'live')) return;
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) throw new Error('この端末・ブラウザはタブ音声の共有に対応していません');
+  status('共有ダイアログで「このタブ」を選び、「タブの音声も共有」にチェックしてください');
+  let st;
+  try {
+    st = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true, preferCurrentTab: true, selfBrowserSurface: 'include' });
+  } catch (e) { throw new Error('共有が許可されませんでした'); }
+  const at = st.getAudioTracks();
+  if (!at.length) { st.getTracks().forEach(t => t.stop()); throw new Error('タブの音声が共有されませんでした'); }
+  st.getVideoTracks().forEach(t => t.stop());   // 映像は使わない
+  capStream = new MediaStream(at);
+  at[0].addEventListener('ended', () => { capStream = null; });
+  try { capSrc && capSrc.disconnect(); } catch (_) {}
+  capSrc = ac.createMediaStreamSource(capStream);
+  capGain = ac.createGain(); capGain.gain.value = 0;   // 読み上げ中だけ開ける（ハウリング防止）
+  capSrc.connect(capGain); capGain.connect(voiceIn);
+}
+
+async function speakWithSpeech(text) {
+  if (!hasSpeech) throw new Error('このブラウザは読み上げ（WebSpeechAPI）に対応していません');
+  ensureAudio();
+  await ensureCapture();
+  stopAll();
+  const my = ++speechToken;
+  speechActive = true;
+  capGain.gain.setTargetAtTime(1, ac.currentTime, 0.01);
+  const run = () => {
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ja-JP';
+    const idx = $('wsVoice').value;
+    const v = idx !== '' ? speechSynthesis.getVoices()[+idx] : null;
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = +$('wsRate').value / 100;
+    u.pitch = +$('wsPitch').value / 100;
+    u.onend = () => {
+      if (my !== speechToken) return;
+      if ($('loop').checked) run(); else { endSpeech(); status('再生完了'); }
+    };
+    u.onerror = e => {
+      if (my !== speechToken || e.error === 'canceled' || e.error === 'interrupted') return;
+      endSpeech(); status('読み上げエラー: ' + e.error);
+    };
+    speechSynthesis.speak(u);
+  };
+  speechSynthesis.cancel();
+  await sleep(60);
+  run();
+  status('再生中…（ブラウザ読み上げ）\n音が出ない・重なる場合は「WebAudio合成」を使ってください');
+}
+function endSpeech() {
+  const my = speechToken;
+  speechActive = false;
+  setTimeout(() => { if (my === speechToken && capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.05); }, 500);
+}
+function stopSpeech() {
+  speechToken++; speechActive = false;
+  if (hasSpeech) speechSynthesis.cancel();
+  if (capGain && ac) capGain.gain.setTargetAtTime(0, ac.currentTime, 0.02);
+}
+
+/* ---------- piper-plus（ブラウザ内で動くニューラルTTS / WebAssembly） ---------- */
+const PIPER_VOICES = {
+  'ayousanz/piper-plus-tsukuyomi-chan': { name: 'つくよみちゃん', credit: 'つくよみちゃんコーパス（CV.夢前黎）' },
+};
+const piperKey = () => $('ppVoice').value;
+const piperCredit = () => (PIPER_VOICES[piperKey()] || {}).credit || '';
+const PIPER_CACHE_MAX = 5;
+const piperCache = new Map();
+let piperLib = null, piperTts = null, piperTtsKey = '';
+
+function loadPiper() {
+  if (piperLib) return piperLib;
+  piperLib = (async () => {
+    const [mod, ort] = await Promise.all([import('piper-plus'), import('onnxruntime-web')]);
+    try { ort.env.wasm.numThreads = 1; } catch (_) {}   // GitHub Pagesでも動くよう、スレッドを使わない
+    return { PiperPlus: mod.PiperPlus, ort };
+  })();
+  piperLib.catch(() => { piperLib = null; });
+  return piperLib;
+}
+
+function getPiper(key) {
+  if (piperTts && piperTtsKey === key) return piperTts;
+  const old = piperTts; piperTts = null;
+  if (old) old.then(t => t.dispose()).catch(() => {});
+  piperTtsKey = key;
+  const p = (async () => {
+    status('音声エンジン（piper-plus）を読み込み中…（初回のみ・時間がかかります）');
+    const { PiperPlus, ort } = await loadPiper();
+    return await PiperPlus.initialize({
+      model: key, ort,
+      onProgress: ({ progress, message }) => status('読み込み中… ' + Math.round((progress || 0) * 100) + '% ' + (message || ''))
+    });
+  })();
+  p.catch(() => { if (piperTts === p) piperTts = null; });
+  piperTts = p;
+  return p;
+}
+
+async function speakWithPiper(text) {
+  ensureAudio();
+  const key = piperKey(), lengthScale = 100 / +$('ppRate').value;
+  const ck = key + '|' + lengthScale.toFixed(2) + '|' + text;
+  let buf = piperCache.get(ck);
+  if (!buf) {
+    const tts = await getPiper(key);
+    status('音声を合成中…');
+    const res = await tts.synthesize(text, { language: 'ja', lengthScale });
+    buf = ac.createBuffer(1, res.samples.length, res.sampleRate);
+    buf.copyToChannel(res.samples, 0);
+    piperCache.set(ck, buf);
+    if (piperCache.size > PIPER_CACHE_MAX) piperCache.delete(piperCache.keys().next().value);
+  }
+  playBuffer(buf);
+  setCredit(piperCredit());
+  status('再生中… 声: ' + piperCredit());
+}
+
+/* ---------- クレジット表記 ---------- */
+function setCredit(text) {
+  $('creditBadgeText').textContent = text;
+  $('creditBadge').classList.toggle('hide', !text);
+  creditSprite.visible = !!text;
+  if (text) creditSprite.userData.set('🎙️ ' + text, '#333');
+  updateAll();
+}
+function updateCreditBox() { $('creditText').textContent = piperCredit(); }
+$('ppVoice').addEventListener('change', updateCreditBox);
+
+/* ---------- WebAudio合成に切り替わったときの通知 ---------- */
+function hideFallback() { $('fallbackNote').classList.add('hide'); }
+function showFallback(fromName, why) {
+  const sel = $('engine');
+  sel.value = 'fm'; sel.dispatchEvent(new Event('change'));   // 画面の選択も「WebAudio合成」に合わせる
+  const box = $('fallbackNote');
+  box.innerHTML = '⚠️ ' + fromName + ' を使えなかったため、<b>WebAudio合成（ロボット声）</b>に切り替えて再生しました。声が違って聞こえるのはこのためです。'
+    + '<small>原因: <span id="fbWhy"></span><br>もう一度試すときは、上の選択肢から選び直してください。</small>';
+  $('fbWhy').textContent = why;
+  box.classList.remove('hide');
+}
+
+/* ---------- 再生ボタン ---------- */
+let speakBusy = false;
+$('speak').addEventListener('click', async () => {
+  if (speakBusy) return;   // 処理中の連打は無視
+  const text = $('text').value.trim();
+  if (!text) { status('テキストを入力してください'); return; }
+  speakBusy = true;
+  hideFallback();
+  const speakBtn = $('speak');
+  speakBtn.disabled = true; speakBtn.textContent = '⏳ 準備中…';
+  ensureAudio();
+  try {
+    let warn = '', fb = null;
+    const eng = $('engine').value;
+    if (eng === 'piper') {
+      try { await speakWithPiper(text); return; }
+      catch (e) {
+        console.error(e);
+        fb = ['piper-plus', e instanceof TypeError ? 'ネットに接続できないか、読み込みに失敗しました（' + e.message + '）' : (e.message || String(e))];
+      }
+    } else if (eng === 'speech') {
+      setCredit('');
+      try { await speakWithSpeech(text); return; }
+      catch (e) {
+        stopSpeech();
+        fb = ['ブラウザ読み上げ', e.message || String(e)];
+      }
+    }
+    {
+      setCredit('');
+      let reading = text;
+      try { reading = await toReading(text); }
+      catch (e) { warn = '（漢字の辞書を使えなかったため、ひらがな等のみ読みます: ' + e.message + '）'; }
+      status('音声を合成中…');
+      const { buf, skipped } = await formantSynth(reading, +$('pitch').value, +$('rate').value / 100);
+      playBuffer(buf);
+      const notes = [];
+      if (warn) notes.push(warn);
+      if (skipped) notes.push('（漢字など ' + skipped + ' 文字は読めないのでスキップしました。ひらがなで入力してください）');
+      status('再生中…（WebAudio合成・ロボット声）' + (notes.length ? '\n' + notes.join('\n') : ''));
+      if (fb) showFallback(fb[0], fb[1]);
+    }
+  } catch (e) {
+    status(e.message);
+  } finally {
+    speakBusy = false;
+    speakBtn.disabled = false; speakBtn.textContent = '▶ 再生';
+  }
+});
+
+/* ---------- マイク ---------- */
+$('micBtn').addEventListener('click', async () => {
+  const btn = $('micBtn');
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    try { micNode.disconnect(); } catch(_){}
+    micStream = micNode = null;
+    btn.textContent = '🎤 マイクをオン'; btn.classList.remove('on'); status('マイクをオフにしました');
+    return;
+  }
+  try {
+    ensureAudio(); stopAll();
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    });
+    micNode = ac.createMediaStreamSource(micStream);
+    micNode.connect(voiceIn);
+    setCredit('');
+    btn.textContent = '🎤 マイクをオフ'; btn.classList.add('on');
+    status('マイク入力中…（ヘッドホン必須）');
+  } catch (e) { status('マイクを使えません: ' + e.message); }
+});
+
+/* ---------- ファイル ---------- */
+$('file').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  ensureAudio(); stopAll(); setCredit('');
+  const el = new Audio(URL.createObjectURL(f));
+  el.loop = $('loop').checked;
+  const src = ac.createMediaElementSource(el);
+  src.connect(voiceIn);
+  el.onended = () => status('再生完了');
+  el.play(); curEl = el;
+  status('再生中: ' + f.name);
+});
+
+
+
+/* ======================= 初期化 ======================= */
+buildPerson('L');
+buildPerson('S');
+P.a = faceTo(P, L);
+bindRange('rv', v => v + ' %');
+bindRange('dr', v => v + ' %');
+bindRange('pitch', v => v + ' Hz');
+bindRange('rate', v => (v / 100).toFixed(2) + '×');
+bindRange('wsRate', v => (v / 100).toFixed(2) + '×');
+bindRange('wsPitch', v => (v / 100).toFixed(2));
+bindRange('ppRate', v => (v / 100).toFixed(2) + '×');
+updateCreditBox();
+setView('persp');
+updateAll();
+animate();
+</script>
+</body>
+</html>
